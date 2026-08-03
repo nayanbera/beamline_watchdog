@@ -52,6 +52,12 @@
             <i class="bi bi-journal-text"></i> Logs
           </a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link {{ 'active' if request.endpoint in ['admin.users','admin.user_form'] }}"
+             href="{{ url_for('admin.users') }}">
+            <i class="bi bi-people"></i> Users
+          </a>
+        </li>
         {% endif %}
       </ul>
       <ul class="navbar-nav ms-auto">

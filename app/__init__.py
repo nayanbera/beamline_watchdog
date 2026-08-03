@@ -40,6 +40,8 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp, url_prefix='/admin')
 
+    apply_epics_env(app)
+
     from .watchdog import start_watchdog
     start_watchdog(app)
 
@@ -88,8 +90,22 @@ def _initialize_defaults():
         ('check_interval',         '10',                 'How often to check PVs (seconds)'),
         ('default_notify_interval','3600',               'Min seconds between repeated notifications'),
         ('site_name',              'EPICS PV Watchdog',  'Site name shown in page header'),
+        ('epics_ca_addr_list',     '',                   'EPICS_CA_ADDR_LIST — space-separated CA broadcast/unicast addresses'),
+        ('epics_ca_auto_addr_list','YES',                'EPICS_CA_AUTO_ADDR_LIST — YES or NO'),
     ]
     for key, value, desc in defaults:
         if not SystemConfig.query.filter_by(key=key).first():
             db.session.add(SystemConfig(key=key, value=value, description=desc))
     db.session.commit()
+
+
+def apply_epics_env(app):
+    """Read EPICS CA settings from DB and push to os.environ before first caget."""
+    with app.app_context():
+        from .models import SystemConfig
+        addr = SystemConfig.query.filter_by(key='epics_ca_addr_list').first()
+        auto = SystemConfig.query.filter_by(key='epics_ca_auto_addr_list').first()
+        if addr and addr.value.strip():
+            os.environ['EPICS_CA_ADDR_LIST'] = addr.value.strip()
+        if auto and auto.value.strip():
+            os.environ['EPICS_CA_AUTO_ADDR_LIST'] = auto.value.strip()

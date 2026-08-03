@@ -78,6 +78,42 @@
           </div>
 
           <hr>
+          <h6 class="text-muted mb-3">EPICS Channel Access</h6>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">
+                <code>EPICS_CA_ADDR_LIST</code>
+              </label>
+              <input type="text" name="epics_ca_addr_list" class="form-control font-monospace"
+                value="{{ cfg.get('epics_ca_addr_list', '') }}"
+                placeholder="e.g. 192.168.1.255 10.0.0.100">
+              <small class="text-muted">
+                Space-separated list of CA broadcast or unicast addresses.
+                Leave blank to use the system default (auto-discovery).
+              </small>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">
+                <code>EPICS_CA_AUTO_ADDR_LIST</code>
+              </label>
+              <select name="epics_ca_auto_addr_list" class="form-select">
+                <option value="YES" {{ 'selected' if cfg.get('epics_ca_auto_addr_list','YES') == 'YES' }}>YES (auto-discover)</option>
+                <option value="NO"  {{ 'selected' if cfg.get('epics_ca_auto_addr_list','YES') == 'NO' }}>NO (use addr list only)</option>
+              </select>
+              <small class="text-muted">Set to NO when using an explicit addr list.</small>
+            </div>
+            <div class="col-12">
+              <div class="alert alert-info py-2 mb-0">
+                <i class="bi bi-info-circle"></i>
+                Changes are applied to the environment immediately and take effect on
+                the <strong>next watchdog tick</strong>. New PV connections will use
+                the updated addresses; existing open channels may require a server
+                restart to fully re-initialize.
+              </div>
+            </div>
+          </div>
+
+          <hr>
           <button type="submit" class="btn btn-primary">
             <i class="bi bi-save"></i> Save Settings
           </button>
@@ -126,22 +162,6 @@
       </div>
     </div>
 
-    <!-- EPICS info -->
-    <div class="card shadow-sm mt-3">
-      <div class="card-header">
-        <h6 class="mb-0"><i class="bi bi-info-circle"></i> EPICS Environment</h6>
-      </div>
-      <div class="card-body">
-        <small class="text-muted">
-          Set these environment variables before starting the watchdog to reach remote IOCs:
-        </small>
-        <pre class="bg-light p-2 rounded mt-2 mb-0 small">export EPICS_CA_ADDR_LIST="192.168.1.255"
-export EPICS_CA_AUTO_ADDR_LIST=NO</pre>
-        <small class="text-muted d-block mt-2">
-          Or add them to the <code>.env</code> file in the project root.
-        </small>
-      </div>
-    </div>
   </div>
 
 </div>

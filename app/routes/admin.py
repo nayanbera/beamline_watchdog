@@ -350,17 +350,28 @@ def settings():
         else:
             keys = ['mail_server', 'mail_port', 'mail_username', 'mail_password',
                     'mail_use_tls', 'mail_use_ssl', 'mail_sender',
-                    'check_interval', 'default_notify_interval', 'site_name']
+                    'check_interval', 'default_notify_interval', 'site_name',
+                    'epics_ca_addr_list', 'epics_ca_auto_addr_list']
             for key in keys:
                 if key in ('mail_use_tls', 'mail_use_ssl'):
                     val = 'true' if request.form.get(key) else 'false'
                 else:
                     val = request.form.get(key, '').strip()
-                if key in cfg:
-                    cfg[key].value = val
+                row = SystemConfig.query.filter_by(key=key).first()
+                if row:
+                    row.value = val
                 else:
                     db.session.add(SystemConfig(key=key, value=val))
             db.session.commit()
+
+            # Apply EPICS env vars immediately so next watchdog tick uses them
+            import os
+            addr = request.form.get('epics_ca_addr_list', '').strip()
+            auto = request.form.get('epics_ca_auto_addr_list', '').strip()
+            if addr:
+                os.environ['EPICS_CA_ADDR_LIST'] = addr
+            if auto:
+                os.environ['EPICS_CA_AUTO_ADDR_LIST'] = auto
 
             # Reschedule watchdog if interval changed
             new_interval = int(request.form.get('check_interval', 10) or 10)
@@ -368,7 +379,7 @@ def settings():
             from flask import current_app
             restart_watchdog(current_app._get_current_object(), new_interval)
 
-            flash('Settings saved.', 'success')
+            flash('Settings saved. EPICS CA settings take effect on the next watchdog tick.', 'success')
             return redirect(url_for('admin.settings'))
 
     config_rows = SystemConfig.query.all()
@@ -398,3 +409,79 @@ def logs():
                            pagination=pagination,
                            source_filter=source_filter,
                            status_filter=status_filter)
+
+
+# ---------------------------------------------------------------------------
+# Admin user management
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/users')
+@login_required
+def users():
+    all_users = Admin.query.order_by(Admin.username).all()
+    return render_template('admin/users.html', users=all_users)
+
+
+@admin_bp.route('/users/add', methods=['GET', 'POST'])
+@admin_bp.route('/users/<int:user_id>/edit', methods=['GET', 'POST'])
+@login_required
+def user_form(user_id=None):
+    user = Admin.query.get_or_404(user_id) if user_id else Admin()
+    errors = {}
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        new_pw = request.form.get('password', '')
+        confirm_pw = request.form.get('confirm_password', '')
+
+        if not username:
+            errors['username'] = 'Username is required.'
+
+        existing = Admin.query.filter_by(username=username).first()
+        if existing and existing.id != user_id:
+            errors['username'] = 'That username is already taken.'
+
+        if not user_id:
+            # New user — password required
+            if not new_pw:
+                errors['password'] = 'Password is required.'
+            elif len(new_pw) < 6:
+                errors['password'] = 'Password must be at least 6 characters.'
+            elif new_pw != confirm_pw:
+                errors['confirm_password'] = 'Passwords do not match.'
+        else:
+            # Editing — password optional (blank = keep current)
+            if new_pw:
+                if len(new_pw) < 6:
+                    errors['password'] = 'Password must be at least 6 characters.'
+                elif new_pw != confirm_pw:
+                    errors['confirm_password'] = 'Passwords do not match.'
+
+        if not errors:
+            user.username = username
+            if new_pw:
+                user.set_password(new_pw)
+            if not user_id:
+                db.session.add(user)
+            db.session.commit()
+            flash(f'User "{user.username}" {"updated" if user_id else "created"}.', 'success')
+            return redirect(url_for('admin.users'))
+
+    return render_template('admin/user_form.html', user=user, user_id=user_id, errors=errors)
+
+
+@admin_bp.route('/users/<int:user_id>/delete', methods=['POST'])
+@login_required
+def user_delete(user_id):
+    if user_id == current_user.id:
+        flash('You cannot delete your own account.', 'danger')
+        return redirect(url_for('admin.users'))
+    if Admin.query.count() <= 1:
+        flash('Cannot delete the last admin account.', 'danger')
+        return redirect(url_for('admin.users'))
+    user = Admin.query.get_or_404(user_id)
+    name = user.username
+    db.session.delete(user)
+    db.session.commit()
+    flash(f'User "{name}" deleted.', 'warning')
+    return redirect(url_for('admin.users'))

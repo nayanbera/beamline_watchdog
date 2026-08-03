@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if user_id else 'Add' }} Admin User{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-person-circle"></i>
+          {{ 'Edit User: ' + user.username if user_id else 'Add Admin User' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+            <input type="text" name="username"
+              class="form-control {{ 'is-invalid' if errors.get('username') }}"
+              value="{{ user.username or '' }}"
+              {% if user_id %}readonly{% endif %}
+              autofocus required>
+            {% if errors.get('username') %}
+              <div class="invalid-feedback">{{ errors.username }}</div>
+            {% endif %}
+            {% if user_id %}
+              <small class="text-muted">Username cannot be changed after creation.</small>
+            {% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              Password
+              {% if not user_id %}<span class="text-danger">*</span>{% endif %}
+            </label>
+            <input type="password" name="password"
+              class="form-control {{ 'is-invalid' if errors.get('password') }}"
+              placeholder="{{ 'Leave blank to keep current password' if user_id else 'Min 6 characters' }}"
+              {% if not user_id %}required{% endif %}
+              minlength="6">
+            {% if errors.get('password') %}
+              <div class="invalid-feedback">{{ errors.password }}</div>
+            {% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              Confirm Password
+              {% if not user_id %}<span class="text-danger">*</span>{% endif %}
+            </label>
+            <input type="password" name="confirm_password"
+              class="form-control {{ 'is-invalid' if errors.get('confirm_password') }}"
+              placeholder="Repeat password"
+              {% if not user_id %}required{% endif %}>
+            {% if errors.get('confirm_password') %}
+              <div class="invalid-feedback">{{ errors.confirm_password }}</div>
+            {% endif %}
+          </div>
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if user_id else 'Create User' }}
+            </button>
+            <a href="{{ url_for('admin.users') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
