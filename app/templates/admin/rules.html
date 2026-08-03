@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Compound Rules — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-diagram-3"></i> Compound Rules</h4>
+  <a href="{{ url_for('admin.rule_form') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> New Rule
+  </a>
+</div>
+
+<p class="text-muted small">
+  A compound rule triggers an alarm when the combined boolean expression over multiple PV states
+  evaluates to True. Use AND/OR to combine PV alarm conditions.
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Status</th>
+          <th>Rule Name</th>
+          <th>Logic</th>
+          <th>Conditions</th>
+          <th>Notify</th>
+          <th>Email List</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %}
+        {% set expr = rule.get_expression() %}
+        <tr>
+          <td>
+            <span class="badge {{ status_badge(rule.status) }}">{{ rule.status }}</span>
+            {% if not rule.enabled %}<span class="badge bg-light text-dark">DISABLED</span>{% endif %}
+          </td>
+          <td>
+            <strong>{{ rule.name }}</strong>
+            {% if rule.description %}<br><small class="text-muted">{{ rule.description }}</small>{% endif %}
+          </td>
+          <td><span class="badge bg-info text-dark">{{ rule.logic_op }}</span></td>
+          <td class="small">
+            {% for cond in expr.get('conditions', []) %}
+              {% set pv_name = pv_map.get(cond.pv_id, 'Unknown PV') %}
+              <span class="badge {{ 'bg-danger' if cond.expected_status == 'ALARM' else 'bg-success' }} me-1">
+                {{ pv_name }}: {{ cond.expected_status }}
+              </span>
+            {% endfor %}
+          </td>
+          <td class="text-center">
+            {% if rule.notify_flag %}
+              <i class="bi bi-bell-fill text-primary"></i>
+            {% else %}
+              <i class="bi bi-bell-slash text-muted"></i>
+            {% endif %}
+          </td>
+          <td class="small">{{ rule.email_list.name if rule.email_list else '—' }}</td>
+          <td class="text-nowrap">
+            <a href="{{ url_for('admin.rule_form', rule_id=rule.id) }}"
+               class="btn btn-sm btn-outline-primary py-0">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="POST" action="{{ url_for('admin.rule_toggle', rule_id=rule.id) }}" class="d-inline">
+              <button class="btn btn-sm py-0 {{ 'btn-outline-warning' if rule.enabled else 'btn-outline-success' }}"
+                      title="{{ 'Disable' if rule.enabled else 'Enable' }}">
+                <i class="bi {{ 'bi-pause' if rule.enabled else 'bi-play' }}"></i>
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('admin.rule_delete', rule_id=rule.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('Delete rule \'{{ rule.name }}\'?')">
+              <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No compound rules. <a href="{{ url_for('admin.rule_form') }}">Create one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}PV Monitors — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-list-check"></i> PV Monitors</h4>
+  <a href="{{ url_for('admin.pv_form') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> Add PV
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Status</th>
+          <th>PV Name</th>
+          <th>Alias</th>
+          <th>Alarm Condition</th>
+          <th>Current Value</th>
+          <th>Notify</th>
+          <th>Email List</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pv in pvs %}
+        <tr class="{{ '' if pv.enabled else 'text-muted' }}">
+          <td>
+            <span class="badge {{ status_badge(pv.status) }}">{{ pv.status }}</span>
+            {% if not pv.enabled %}<span class="badge bg-light text-dark">DISABLED</span>{% endif %}
+          </td>
+          <td><code class="small">{{ pv.pv_name }}</code></td>
+          <td>{{ pv.alias or '—' }}</td>
+          <td class="small">{{ pv.condition_str }}</td>
+          <td class="small">
+            {% if pv.current_value_str %}{{ pv.current_value_str }}
+            {% elif pv.current_value is not none %}{{ '%.6g'|format(pv.current_value) }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-center">
+            {% if pv.notify_flag %}
+              <i class="bi bi-bell-fill text-primary"></i>
+            {% else %}
+              <i class="bi bi-bell-slash text-muted"></i>
+            {% endif %}
+          </td>
+          <td class="small">{{ pv.email_list.name if pv.email_list else '—' }}</td>
+          <td class="text-nowrap">
+            <a href="{{ url_for('admin.pv_form', pv_id=pv.id) }}" class="btn btn-xs btn-outline-primary btn-sm py-0">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="POST" action="{{ url_for('admin.pv_toggle', pv_id=pv.id) }}" class="d-inline">
+              <button class="btn btn-xs btn-sm py-0 {{ 'btn-outline-warning' if pv.enabled else 'btn-outline-success' }}"
+                      title="{{ 'Disable' if pv.enabled else 'Enable' }}">
+                <i class="bi {{ 'bi-pause' if pv.enabled else 'bi-play' }}"></i>
+              </button>
+            </form>
+            <form method="POST" action="{{ url_for('admin.pv_delete', pv_id=pv.id) }}" class="d-inline"
+                  onsubmit="return confirm('Delete PV {{ pv.pv_name }}?')">
+              <button class="btn btn-xs btn-sm btn-outline-danger py-0" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-muted py-4">
+            No PVs configured. <a href="{{ url_for('admin.pv_form') }}">Add one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

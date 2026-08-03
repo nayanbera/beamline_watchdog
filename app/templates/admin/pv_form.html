@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if pv_id else 'Add' }} PV — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-activity"></i>
+          {{ 'Edit PV: ' + pv.pv_name if pv_id else 'Add New PV Monitor' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="row g-3">
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">EPICS PV Name <span class="text-danger">*</span></label>
+              <input type="text" name="pv_name" class="form-control font-monospace
+                {{ 'is-invalid' if errors.get('pv_name') }}"
+                value="{{ pv.pv_name or '' }}" placeholder="e.g. BEAM:CURRENT" required autofocus>
+              {% if errors.get('pv_name') %}
+                <div class="invalid-feedback">{{ errors.pv_name }}</div>
+              {% endif %}
+              <small class="text-muted">The exact Channel Access PV name.</small>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Alias</label>
+              <input type="text" name="alias" class="form-control"
+                value="{{ pv.alias or '' }}" placeholder="Human-readable name">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" class="form-control"
+                value="{{ pv.description or '' }}" placeholder="Optional description">
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Alarm Condition</h6></div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Condition <span class="text-danger">*</span></label>
+              <select name="condition_op" id="condition_op" class="form-select" onchange="toggleRange()">
+                {% for op, label in condition_ops %}
+                <option value="{{ op }}" {{ 'selected' if pv.condition_op == op }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Threshold <span class="text-danger">*</span></label>
+              <input type="number" step="any" name="condition_value"
+                class="form-control {{ 'is-invalid' if errors.get('condition_value') }}"
+                value="{{ pv.condition_value if pv.condition_value is not none else '' }}"
+                placeholder="e.g. 100.0" required>
+              {% if errors.get('condition_value') %}
+                <div class="invalid-feedback">{{ errors.condition_value }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-4" id="threshold2-group" style="display:none">
+              <label class="form-label fw-semibold">Upper Bound</label>
+              <input type="number" step="any" name="condition_value2"
+                class="form-control {{ 'is-invalid' if errors.get('condition_value2') }}"
+                value="{{ pv.condition_value2 if pv.condition_value2 is not none else '' }}"
+                placeholder="e.g. 200.0">
+              {% if errors.get('condition_value2') %}
+                <div class="invalid-feedback">{{ errors.condition_value2 }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email List</label>
+              <select name="email_list_id" class="form-select">
+                <option value="">— No notification —</option>
+                {% for elist in email_lists %}
+                <option value="{{ elist.id }}"
+                  {{ 'selected' if pv.email_list_id == elist.id }}>
+                  {{ elist.name }} ({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Repeat Notify Interval (s)</label>
+              <input type="number" name="notify_interval" class="form-control"
+                value="{{ pv.notify_interval or 3600 }}" min="60" placeholder="3600">
+              <small class="text-muted">0 = once per alarm only</small>
+            </div>
+
+            <div class="col-md-3 d-flex align-items-center gap-3 pt-4">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"
+                  {{ 'checked' if pv.notify_flag is not false }}>
+                <label class="form-check-label" for="notify_flag">Enable notifications</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
+                  {{ 'checked' if pv.enabled is not false }}>
+                <label class="form-check-label" for="enabled">Enable monitoring for this PV</label>
+              </div>
+            </div>
+
+          </div><!-- row -->
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if pv_id else 'Add PV' }}
+            </button>
+            <a href="{{ url_for('admin.pvs') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleRange() {
+  const op = document.getElementById('condition_op').value;
+  const rangeOps = ['in_range', 'out_range'];
+  document.getElementById('threshold2-group').style.display =
+    rangeOps.includes(op) ? 'block' : 'none';
+}
+// Run on page load
+toggleRange();
+</script>
+{% endblock %}

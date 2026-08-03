@@ -1,0 +1,40 @@
+/* Body / layout */
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f9fa;
+}
+
+.container-fluid { flex: 1; }
+
+/* Footer */
+.footer { border-top: 1px solid #343a40; }
+
+/* Monospace helper for PV names */
+code { font-size: 0.85em; }
+
+/* Status badges — slight size boost */
+.table td .badge { font-size: 0.78em; letter-spacing: 0.03em; }
+
+/* Alarm rows — stronger tint */
+.table-danger td { background-color: rgba(220, 53, 69, 0.12) !important; }
+
+/* Summary card numbers */
+.display-6 { font-size: 2rem; }
+
+/* Auto-refresh pulse */
+#refresh-badge { animation: pulse 2s infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* Admin nav active indicator */
+.navbar-nav .nav-link.active {
+  border-bottom: 2px solid #ffc107;
+  padding-bottom: 2px;
+}
+
+/* Condition row builder */
+.condition-row { border-left: 3px solid #0d6efd; padding-left: 8px; }

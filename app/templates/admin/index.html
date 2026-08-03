@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}Admin — {{ site_name | default('EPICS PV Watchdog') }}{% endblock %}
+
+{% block content %}
+<h4 class="mb-4"><i class="bi bi-speedometer"></i> Admin Overview</h4>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <a href="{{ url_for('admin.pvs') }}" class="text-decoration-none">
+      <div class="card shadow-sm h-100 border-primary">
+        <div class="card-body text-center">
+          <div class="display-5 fw-bold text-primary">{{ pv_count }}</div>
+          <div class="text-muted">Monitored PVs</div>
+          {% if alarm_pvs > 0 %}
+          <span class="badge bg-danger mt-1">{{ alarm_pvs }} in ALARM</span>
+          {% endif %}
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{{ url_for('admin.rules') }}" class="text-decoration-none">
+      <div class="card shadow-sm h-100 border-info">
+        <div class="card-body text-center">
+          <div class="display-5 fw-bold text-info">{{ rule_count }}</div>
+          <div class="text-muted">Compound Rules</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{{ url_for('admin.email_lists') }}" class="text-decoration-none">
+      <div class="card shadow-sm h-100 border-success">
+        <div class="card-body text-center">
+          <div class="display-5 fw-bold text-success">{{ list_count }}</div>
+          <div class="text-muted">Email Lists</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-3">
+    <a href="{{ url_for('admin.logs') }}" class="text-decoration-none">
+      <div class="card shadow-sm h-100 border-secondary">
+        <div class="card-body text-center">
+          <div class="display-5 fw-bold text-secondary">{{ recent_logs | length }}</div>
+          <div class="text-muted">Recent Notifications</div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="card shadow-sm">
+      <div class="card-header"><i class="bi bi-journal-text"></i> Recent Notifications</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Source</th>
+              <th>Event</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in recent_logs %}
+            <tr>
+              <td class="small text-muted text-nowrap">{{ log.timestamp.strftime('%m-%d %H:%M') }}</td>
+              <td><span class="badge bg-secondary">{{ log.source_type }}</span></td>
+              <td class="small">{{ log.source_name }}</td>
+              <td>
+                <span class="badge {{ 'bg-danger' if log.event_status == 'ALARM' else 'bg-success' }}">
+                  {{ log.event_status }}
+                </span>
+              </td>
+              <td>
+                {% if log.success %}
+                  <i class="bi bi-check-circle text-success"></i>
+                {% else %}
+                  <i class="bi bi-x-circle text-danger" title="{{ log.error_message }}"></i>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No notifications yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer text-end">
+        <a href="{{ url_for('admin.logs') }}" class="btn btn-sm btn-outline-secondary">View all logs</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-header"><i class="bi bi-lightning-charge"></i> Quick Actions</div>
+      <div class="list-group list-group-flush">
+        <a href="{{ url_for('admin.pv_form') }}" class="list-group-item list-group-item-action">
+          <i class="bi bi-plus-circle text-primary"></i> Add PV
+        </a>
+        <a href="{{ url_for('admin.email_list_form') }}" class="list-group-item list-group-item-action">
+          <i class="bi bi-plus-circle text-success"></i> Create Email List
+        </a>
+        <a href="{{ url_for('admin.rule_form') }}" class="list-group-item list-group-item-action">
+          <i class="bi bi-plus-circle text-info"></i> Add Compound Rule
+        </a>
+        <a href="{{ url_for('admin.settings') }}" class="list-group-item list-group-item-action">
+          <i class="bi bi-gear text-secondary"></i> Settings & Email Config
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

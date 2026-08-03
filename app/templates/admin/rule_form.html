@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if rule_id else 'New' }} Rule — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-diagram-3"></i>
+          {{ 'Edit Rule: ' + rule.name if rule_id else 'New Compound Rule' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" id="rule-form">
+          <!-- Hidden field to carry serialised conditions JSON -->
+          <input type="hidden" name="conditions_json" id="conditions_json" value="">
+
+          <div class="row g-3">
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Rule Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control
+                {{ 'is-invalid' if errors.get('name') }}"
+                value="{{ rule.name or '' }}" placeholder="e.g. Beam Loss Condition" required autofocus>
+              {% if errors.get('name') %}
+                <div class="invalid-feedback">{{ errors.name }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Logic Operator</label>
+              <select name="logic_op" id="logic_op" class="form-select">
+                <option value="AND" {{ 'selected' if rule.logic_op == 'AND' }}>AND — all conditions must match</option>
+                <option value="OR"  {{ 'selected' if rule.logic_op == 'OR' }}>OR — any condition must match</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" class="form-control"
+                value="{{ rule.description or '' }}" placeholder="Optional description">
+            </div>
+
+            <!-- Conditions builder -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">
+                PV Conditions
+                <span class="text-danger">*</span>
+                <small class="text-muted fw-normal ms-2">
+                  Rule triggers when the combined state of these PVs evaluates to True.
+                </small>
+              </label>
+              {% if errors.get('conditions') %}
+              <div class="alert alert-danger py-2">{{ errors.conditions }}</div>
+              {% endif %}
+
+              <div id="conditions-container" class="mb-2">
+                <!-- Rows injected by JS -->
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addConditionRow()">
+                <i class="bi bi-plus-lg"></i> Add Condition
+              </button>
+            </div>
+
+            <!-- Notifications -->
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email List</label>
+              <select name="email_list_id" class="form-select">
+                <option value="">— No notification —</option>
+                {% for elist in email_lists %}
+                <option value="{{ elist.id }}"
+                  {{ 'selected' if rule.email_list_id == elist.id }}>
+                  {{ elist.name }} ({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Repeat Notify Interval (s)</label>
+              <input type="number" name="notify_interval" class="form-control"
+                value="{{ rule.notify_interval or 3600 }}" min="60">
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end pb-1 gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"
+                  {{ 'checked' if rule.notify_flag is not false }}>
+                <label class="form-check-label" for="notify_flag">Enable notifications</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
+                  {{ 'checked' if rule.enabled is not false }}>
+                <label class="form-check-label" for="enabled">Enable this rule</label>
+              </div>
+            </div>
+
+          </div>
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if rule_id else 'Create Rule' }}
+            </button>
+            <a href="{{ url_for('admin.rules') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PV data for JS -->
+<script>
+const ALL_PVS = [
+  {% for pv in all_pvs %}
+  { id: {{ pv.id }}, name: {{ (pv.alias or pv.pv_name) | tojson }} },
+  {% endfor %}
+];
+
+const INITIAL_CONDITIONS = {{ existing_conditions | tojson }};
+let rowIndex = 0;
+
+function buildPvSelect(selectedId) {
+  let html = '<select class="form-select form-select-sm" name="cond_pv_id">'
+           + '<option value="">— Select PV —</option>';
+  ALL_PVS.forEach(pv => {
+    const sel = pv.id === selectedId ? ' selected' : '';
+    html += `<option value="${pv.id}"${sel}>${pv.name}</option>`;
+  });
+  html += '</select>';
+  return html;
+}
+
+function buildExpectedSelect(selectedStatus) {
+  return `
+    <select class="form-select form-select-sm" name="cond_expected">
+      <option value="ALARM" ${selectedStatus === 'ALARM' ? 'selected' : ''}>ALARM (condition met)</option>
+      <option value="OK"    ${selectedStatus === 'OK'    ? 'selected' : ''}>OK (condition NOT met)</option>
+    </select>`;
+}
+
+function addConditionRow(pvId, expectedStatus) {
+  const idx = rowIndex++;
+  const container = document.getElementById('conditions-container');
+  const div = document.createElement('div');
+  div.className = 'row g-2 align-items-center mb-2 condition-row';
+  div.dataset.idx = idx;
+  div.innerHTML = `
+    <div class="col-1 text-center text-muted small" id="logic-label-${idx}"></div>
+    <div class="col-5">${buildPvSelect(pvId || null)}</div>
+    <div class="col-4">${buildExpectedSelect(expectedStatus || 'ALARM')}</div>
+    <div class="col-2">
+      <button type="button" class="btn btn-sm btn-outline-danger w-100"
+              onclick="removeConditionRow(${idx})">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>`;
+  container.appendChild(div);
+  updateLogicLabels();
+}
+
+function removeConditionRow(idx) {
+  const row = document.querySelector(`.condition-row[data-idx="${idx}"]`);
+  if (row) row.remove();
+  updateLogicLabels();
+}
+
+function updateLogicLabels() {
+  const logic = document.getElementById('logic_op').value;
+  document.querySelectorAll('.condition-row').forEach((row, i) => {
+    const label = row.querySelector('[id^="logic-label-"]');
+    if (label) label.textContent = i === 0 ? 'IF' : logic;
+  });
+}
+
+document.getElementById('logic_op').addEventListener('change', updateLogicLabels);
+
+document.getElementById('rule-form').addEventListener('submit', function() {
+  const conditions = [];
+  document.querySelectorAll('.condition-row').forEach(row => {
+    const pvId = parseInt(row.querySelector('[name="cond_pv_id"]').value);
+    const expected = row.querySelector('[name="cond_expected"]').value;
+    if (pvId) conditions.push({ pv_id: pvId, expected_status: expected });
+  });
+  document.getElementById('conditions_json').value = JSON.stringify(conditions);
+});
+
+// Populate existing conditions on edit
+if (INITIAL_CONDITIONS.length > 0) {
+  INITIAL_CONDITIONS.forEach(c => addConditionRow(c.pv_id, c.expected_status));
+} else {
+  addConditionRow(); // start with one empty row
+}
+</script>
+{% endblock %}

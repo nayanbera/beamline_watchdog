@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Email Lists — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-envelope-at"></i> Email Lists</h4>
+  <a href="{{ url_for('admin.email_list_form') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> New List
+  </a>
+</div>
+
+<div class="row g-3">
+  {% for elist in lists %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <span class="fw-semibold">{{ elist.name }}</span>
+        <span class="badge bg-secondary">{{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }}</span>
+      </div>
+      <div class="card-body py-2">
+        {% if elist.description %}
+          <p class="text-muted small mb-2">{{ elist.description }}</p>
+        {% endif %}
+        <ul class="list-unstyled mb-0">
+          {% for email in elist.emails %}
+          <li class="small"><i class="bi bi-at text-muted"></i> {{ email }}</li>
+          {% endfor %}
+        </ul>
+        {% if elist.pv_monitors %}
+        <hr class="my-2">
+        <small class="text-muted">
+          Used by {{ elist.pv_monitors | length }} PV(s),
+          {{ elist.compound_rules | length }} rule(s)
+        </small>
+        {% endif %}
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <a href="{{ url_for('admin.email_list_form', list_id=elist.id) }}"
+           class="btn btn-sm btn-outline-primary flex-fill">
+          <i class="bi bi-pencil"></i> Edit
+        </a>
+        <form method="POST" action="{{ url_for('admin.email_list_delete', list_id=elist.id) }}"
+              onsubmit="return confirm('Delete list \'{{ elist.name }}\'?')">
+          <button class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="text-center text-muted py-5">
+      No email lists yet. <a href="{{ url_for('admin.email_list_form') }}">Create one</a>.
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

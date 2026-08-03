@@ -1,0 +1,148 @@
+{% extends 'base.html' %}
+{% block title %}Settings — Admin{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+  <!-- Email / system settings -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0"><i class="bi bi-gear-fill"></i> System Settings</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="settings">
+
+          <h6 class="text-muted mb-3">Email (SMTP)</h6>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">SMTP Server</label>
+              <input type="text" name="mail_server" class="form-control"
+                value="{{ cfg.get('mail_server', 'localhost') }}" placeholder="smtp.example.com">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Port</label>
+              <input type="number" name="mail_port" class="form-control"
+                value="{{ cfg.get('mail_port', '25') }}" placeholder="25">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Username</label>
+              <input type="text" name="mail_username" class="form-control"
+                value="{{ cfg.get('mail_username', '') }}" placeholder="(blank if not required)">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Password</label>
+              <input type="password" name="mail_password" class="form-control"
+                value="{{ cfg.get('mail_password', '') }}" placeholder="(blank if not required)">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Sender Address</label>
+              <input type="email" name="mail_sender" class="form-control"
+                value="{{ cfg.get('mail_sender', 'watchdog@localhost') }}">
+            </div>
+            <div class="col-md-6 d-flex align-items-end gap-4 pb-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="mail_use_tls" id="use_tls"
+                  {{ 'checked' if cfg.get('mail_use_tls') == 'true' }}>
+                <label class="form-check-label" for="use_tls">STARTTLS</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="mail_use_ssl" id="use_ssl"
+                  {{ 'checked' if cfg.get('mail_use_ssl') == 'true' }}>
+                <label class="form-check-label" for="use_ssl">SSL (port 465)</label>
+              </div>
+            </div>
+          </div>
+
+          <hr>
+          <h6 class="text-muted mb-3">Watchdog</h6>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">PV Check Interval (seconds)</label>
+              <input type="number" name="check_interval" class="form-control"
+                value="{{ cfg.get('check_interval', '10') }}" min="1" max="3600">
+              <small class="text-muted">How often the background watchdog reads all PVs.</small>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Default Repeat-Notify Interval (seconds)</label>
+              <input type="number" name="default_notify_interval" class="form-control"
+                value="{{ cfg.get('default_notify_interval', '3600') }}" min="60">
+              <small class="text-muted">Min seconds between repeat alarm notifications.</small>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Site Name</label>
+              <input type="text" name="site_name" class="form-control"
+                value="{{ cfg.get('site_name', 'EPICS PV Watchdog') }}">
+            </div>
+          </div>
+
+          <hr>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save"></i> Save Settings
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change password -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0"><i class="bi bi-shield-lock"></i> Change Admin Password</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="action" value="change_password">
+          <div class="mb-3">
+            <label class="form-label">Current Password</label>
+            <input type="password" name="current_password"
+              class="form-control {{ 'is-invalid' if errors.get('current_password') }}" required>
+            {% if errors.get('current_password') %}
+              <div class="invalid-feedback">{{ errors.current_password }}</div>
+            {% endif %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label">New Password</label>
+            <input type="password" name="new_password"
+              class="form-control {{ 'is-invalid' if errors.get('new_password') }}" required minlength="6">
+            {% if errors.get('new_password') %}
+              <div class="invalid-feedback">{{ errors.new_password }}</div>
+            {% endif %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Confirm New Password</label>
+            <input type="password" name="confirm_password"
+              class="form-control {{ 'is-invalid' if errors.get('confirm_password') }}" required>
+            {% if errors.get('confirm_password') %}
+              <div class="invalid-feedback">{{ errors.confirm_password }}</div>
+            {% endif %}
+          </div>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-key"></i> Change Password
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- EPICS info -->
+    <div class="card shadow-sm mt-3">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-info-circle"></i> EPICS Environment</h6>
+      </div>
+      <div class="card-body">
+        <small class="text-muted">
+          Set these environment variables before starting the watchdog to reach remote IOCs:
+        </small>
+        <pre class="bg-light p-2 rounded mt-2 mb-0 small">export EPICS_CA_ADDR_LIST="192.168.1.255"
+export EPICS_CA_AUTO_ADDR_LIST=NO</pre>
+        <small class="text-muted d-block mt-2">
+          Or add them to the <code>.env</code> file in the project root.
+        </small>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

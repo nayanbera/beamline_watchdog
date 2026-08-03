@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — {{ site_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-speedometer2"></i> Live Status Dashboard</h4>
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted small">Last updated: <span id="last-updated">{{ last_updated }}</span></span>
+    <span id="refresh-badge" class="badge bg-success">● auto-refresh</span>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="display-6 fw-bold text-success" id="ok-count">{{ ok_count }}</div>
+        <div class="text-muted small">OK</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100 {{ 'border-danger border-2' if alarm_count > 0 }}">
+      <div class="card-body text-center py-3">
+        <div class="display-6 fw-bold text-danger" id="alarm-count">{{ alarm_count }}</div>
+        <div class="text-muted small">ALARM</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="display-6 fw-bold text-warning" id="disc-count">{{ disconnected_count }}</div>
+        <div class="text-muted small">DISCONNECTED / ERROR</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body text-center py-3">
+        <div class="display-6 fw-bold text-secondary" id="total-count">{{ total_count }}</div>
+        <div class="text-muted small">TOTAL PVs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PV Table -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-list-check"></i> PV Monitor Status</span>
+    <a href="{{ url_for('admin.pvs') }}" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-gear"></i> Manage
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width:100px">Status</th>
+          <th>PV Name</th>
+          <th>Alias</th>
+          <th>Current Value</th>
+          <th>Alarm Condition</th>
+          <th>Last Checked</th>
+          <th>Last Alarm</th>
+        </tr>
+      </thead>
+      <tbody id="pv-tbody">
+        {% for pv in pvs %}
+        <tr id="pv-row-{{ pv.id }}" class="{{ 'table-danger' if pv.status == 'ALARM' else ('table-warning' if pv.status in ['DISCONNECTED','ERROR'] else '') }}">
+          <td>
+            <span class="badge {{ status_badge(pv.status) }}" id="pv-badge-{{ pv.id }}">
+              {{ pv.status }}
+            </span>
+          </td>
+          <td><code class="small">{{ pv.pv_name }}</code></td>
+          <td class="text-muted">{{ pv.alias or '' }}</td>
+          <td id="pv-val-{{ pv.id }}">
+            {% if pv.current_value_str %}
+              {{ pv.current_value_str }}
+            {% elif pv.current_value is not none %}
+              {{ '%.6g' | format(pv.current_value) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ pv.condition_str }}</td>
+          <td class="small" id="pv-checked-{{ pv.id }}">
+            {{ pv.last_checked.strftime('%H:%M:%S') if pv.last_checked else '—' }}
+          </td>
+          <td class="small" id="pv-alarm-{{ pv.id }}">
+            {% if pv.last_alarm %}
+              <span class="text-danger">{{ pv.last_alarm.strftime('%Y-%m-%d %H:%M') }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No PVs configured.
+            {% if not current_user.is_authenticated %}
+              <a href="{{ url_for('admin.login') }}">Log in</a> to add PVs.
+            {% else %}
+              <a href="{{ url_for('admin.pv_form') }}">Add a PV</a>.
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Compound Rules -->
+{% if rules %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-diagram-3"></i> Compound Rule Status</span>
+    <a href="{{ url_for('admin.rules') }}" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-gear"></i> Manage
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width:100px">Status</th>
+          <th>Rule Name</th>
+          <th>Logic</th>
+          <th>Description</th>
+          <th>Last Checked</th>
+        </tr>
+      </thead>
+      <tbody id="rules-tbody">
+        {% for rule in rules %}
+        <tr id="rule-row-{{ rule.id }}" class="{{ 'table-danger' if rule.status == 'ALARM' else '' }}">
+          <td>
+            <span class="badge {{ status_badge(rule.status) }}" id="rule-badge-{{ rule.id }}">
+              {{ rule.status }}
+            </span>
+          </td>
+          <td>{{ rule.name }}</td>
+          <td><span class="badge bg-info text-dark">{{ rule.logic_op }}</span></td>
+          <td class="text-muted small">{{ rule.description or '' }}</td>
+          <td class="small" id="rule-checked-{{ rule.id }}">
+            {{ rule.last_checked.strftime('%H:%M:%S') if rule.last_checked else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const REFRESH_MS = 5000;
+
+function statusBadge(s) {
+  const map = {
+    'OK': 'bg-success',
+    'ALARM': 'bg-danger',
+    'DISCONNECTED': 'bg-warning text-dark',
+    'ERROR': 'bg-warning text-dark',
+    'UNKNOWN': 'bg-secondary',
+  };
+  return map[s] || 'bg-secondary';
+}
+
+function rowClass(s) {
+  if (s === 'ALARM') return 'table-danger';
+  if (s === 'DISCONNECTED' || s === 'ERROR') return 'table-warning';
+  return '';
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    document.getElementById('ok-count').textContent    = d.ok_count;
+    document.getElementById('alarm-count').textContent = d.alarm_count;
+    document.getElementById('disc-count').textContent  = d.disconnected_count;
+    document.getElementById('total-count').textContent = d.total_count;
+    document.getElementById('last-updated').textContent = d.last_updated;
+
+    (d.pvs || []).forEach(p => {
+      const row = document.getElementById(`pv-row-${p.id}`);
+      if (!row) return;
+      row.className = rowClass(p.status);
+      const badge = document.getElementById(`pv-badge-${p.id}`);
+      if (badge) { badge.textContent = p.status; badge.className = `badge ${statusBadge(p.status)}`; }
+      const val = document.getElementById(`pv-val-${p.id}`);
+      if (val) val.textContent = p.current_value;
+      const chk = document.getElementById(`pv-checked-${p.id}`);
+      if (chk) chk.textContent = p.last_checked;
+      const alm = document.getElementById(`pv-alarm-${p.id}`);
+      if (alm) alm.innerHTML = p.last_alarm !== 'Never'
+        ? `<span class="text-danger">${p.last_alarm}</span>`
+        : '<span class="text-muted">—</span>';
+    });
+
+    (d.rules || []).forEach(r => {
+      const row = document.getElementById(`rule-row-${r.id}`);
+      if (!row) return;
+      row.className = rowClass(r.status);
+      const badge = document.getElementById(`rule-badge-${r.id}`);
+      if (badge) { badge.textContent = r.status; badge.className = `badge ${statusBadge(r.status)}`; }
+      const chk = document.getElementById(`rule-checked-${r.id}`);
+      if (chk) chk.textContent = r.last_checked;
+    });
+
+  } catch (e) {
+    console.warn('Refresh failed:', e);
+  } finally {
+    setTimeout(refresh, REFRESH_MS);
+  }
+}
+
+setTimeout(refresh, REFRESH_MS);
+</script>
+{% endblock %}

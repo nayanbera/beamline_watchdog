@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if list_id else 'New' }} Email List — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-envelope-at"></i>
+          {{ 'Edit List: ' + elist.name if list_id else 'New Email List' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">List Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control
+              {{ 'is-invalid' if errors.get('name') }}"
+              value="{{ elist.name or '' }}" placeholder="e.g. Operators, On-Call" required autofocus>
+            {% if errors.get('name') %}
+              <div class="invalid-feedback">{{ errors.name }}</div>
+            {% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            <input type="text" name="description" class="form-control"
+              value="{{ elist.description or '' }}" placeholder="Optional description">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Email Addresses <span class="text-danger">*</span></label>
+            <textarea name="emails" class="form-control font-monospace" rows="8"
+              placeholder="One address per line (or comma-separated)">{{ emails_text }}</textarea>
+            <small class="text-muted">Enter one email address per line, or separate with commas.</small>
+          </div>
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if list_id else 'Create List' }}
+            </button>
+            <a href="{{ url_for('admin.email_lists') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
