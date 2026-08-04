@@ -115,6 +115,64 @@
   </div>
 </div>
 
+<!-- Process Monitors -->
+{% if processes %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-cpu"></i> Process Monitor Status</span>
+    <a href="{{ url_for('admin.processes') }}" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-gear"></i> Manage
+    </a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width:110px">Status</th>
+          <th>Process Name</th>
+          <th>Match</th>
+          <th>PID</th>
+          <th>Last Checked</th>
+          <th>Last Stopped</th>
+        </tr>
+      </thead>
+      <tbody id="proc-tbody">
+        {% for pm in processes %}
+        <tr id="proc-row-{{ pm.id }}" class="{{ 'table-danger' if pm.status == 'STOPPED' else '' }}">
+          <td>
+            <span class="badge {{ 'bg-success' if pm.status == 'RUNNING' else ('bg-danger' if pm.status == 'STOPPED' else 'bg-secondary') }}"
+                  id="proc-badge-{{ pm.id }}">
+              {{ pm.status }}
+            </span>
+          </td>
+          <td><strong>{{ pm.name }}</strong>
+            {% if pm.description %}<br><small class="text-muted">{{ pm.description }}</small>{% endif %}
+          </td>
+          <td class="small text-muted">
+            <span class="badge bg-light text-dark">{{ pm.match_type }}</span>
+            <code class="ms-1">{{ pm.match_value }}</code>
+          </td>
+          <td class="small" id="proc-pid-{{ pm.id }}">
+            {{ pm.pid if pm.pid else '—' }}
+          </td>
+          <td class="small" id="proc-checked-{{ pm.id }}">
+            {{ pm.last_checked.strftime('%H:%M:%S') if pm.last_checked else '—' }}
+          </td>
+          <td class="small" id="proc-stopped-{{ pm.id }}">
+            {% if pm.last_stopped %}
+              <span class="text-danger">{{ pm.last_stopped.strftime('%Y-%m-%d %H:%M') }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- Compound Rules -->
 {% if rules %}
 <div class="card shadow-sm mb-4">
@@ -215,6 +273,23 @@ async function refresh() {
       if (badge) { badge.textContent = r.status; badge.className = `badge ${statusBadge(r.status)}`; }
       const chk = document.getElementById(`rule-checked-${r.id}`);
       if (chk) chk.textContent = r.last_checked;
+    });
+
+    (d.processes || []).forEach(p => {
+      const row = document.getElementById(`proc-row-${p.id}`);
+      if (!row) return;
+      row.className = p.status === 'STOPPED' ? 'table-danger' : '';
+      const badge = document.getElementById(`proc-badge-${p.id}`);
+      const bc = p.status === 'RUNNING' ? 'bg-success' : (p.status === 'STOPPED' ? 'bg-danger' : 'bg-secondary');
+      if (badge) { badge.textContent = p.status; badge.className = `badge ${bc}`; }
+      const pid = document.getElementById(`proc-pid-${p.id}`);
+      if (pid) pid.textContent = p.pid || '—';
+      const chk = document.getElementById(`proc-checked-${p.id}`);
+      if (chk) chk.textContent = p.last_checked;
+      const stp = document.getElementById(`proc-stopped-${p.id}`);
+      if (stp) stp.innerHTML = p.last_stopped !== 'Never'
+        ? `<span class="text-danger">${p.last_stopped}</span>`
+        : '<span class="text-muted">—</span>';
     });
 
   } catch (e) {

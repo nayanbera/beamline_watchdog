@@ -7,7 +7,7 @@ from werkzeug.security import check_password_hash
 
 from .. import db
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
-                      NotificationLog, SystemConfig)
+                      ProcessMonitor, NotificationLog, SystemConfig)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -485,3 +485,82 @@ def user_delete(user_id):
     db.session.commit()
     flash(f'User "{name}" deleted.', 'warning')
     return redirect(url_for('admin.users'))
+
+
+# ---------------------------------------------------------------------------
+# Process monitors
+# ---------------------------------------------------------------------------
+
+MATCH_TYPES = [
+    ('name',    'Process name (partial, case-insensitive)'),
+    ('cmdline', 'Command-line substring (full command including arguments)'),
+]
+
+
+@admin_bp.route('/processes')
+@login_required
+def processes():
+    items = ProcessMonitor.query.order_by(ProcessMonitor.name).all()
+    return render_template('admin/processes.html', processes=items)
+
+
+@admin_bp.route('/processes/add', methods=['GET', 'POST'])
+@admin_bp.route('/processes/<int:proc_id>/edit', methods=['GET', 'POST'])
+@login_required
+def process_form(proc_id=None):
+    pm = ProcessMonitor.query.get_or_404(proc_id) if proc_id else ProcessMonitor()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
+    errors = {}
+
+    if request.method == 'POST':
+        pm.name = request.form.get('name', '').strip()
+        pm.description = request.form.get('description', '').strip() or None
+        pm.match_type = request.form.get('match_type', 'name')
+        pm.match_value = request.form.get('match_value', '').strip()
+        pm.notify_flag = 'notify_flag' in request.form
+        pm.enabled = 'enabled' in request.form
+
+        ni = request.form.get('notify_interval', '3600').strip()
+        try:
+            pm.notify_interval = int(ni)
+        except ValueError:
+            pm.notify_interval = 3600
+
+        elist_id = request.form.get('email_list_id', '')
+        pm.email_list_id = int(elist_id) if elist_id else None
+
+        if not pm.name:
+            errors['name'] = 'Display name is required.'
+        if not pm.match_value:
+            errors['match_value'] = 'Match value is required.'
+
+        if not errors:
+            if not proc_id:
+                db.session.add(pm)
+            db.session.commit()
+            flash(f'Process monitor "{pm.name}" {"updated" if proc_id else "added"}.', 'success')
+            return redirect(url_for('admin.processes'))
+
+    return render_template('admin/process_form.html', pm=pm, proc_id=proc_id,
+                           email_lists=email_lists, match_types=MATCH_TYPES, errors=errors)
+
+
+@admin_bp.route('/processes/<int:proc_id>/delete', methods=['POST'])
+@login_required
+def process_delete(proc_id):
+    pm = ProcessMonitor.query.get_or_404(proc_id)
+    name = pm.name
+    db.session.delete(pm)
+    db.session.commit()
+    flash(f'Process monitor "{name}" deleted.', 'warning')
+    return redirect(url_for('admin.processes'))
+
+
+@admin_bp.route('/processes/<int:proc_id>/toggle', methods=['POST'])
+@login_required
+def process_toggle(proc_id):
+    pm = ProcessMonitor.query.get_or_404(proc_id)
+    pm.enabled = not pm.enabled
+    db.session.commit()
+    flash(f'Process monitor "{pm.name}" {"enabled" if pm.enabled else "disabled"}.', 'info')
+    return redirect(url_for('admin.processes'))

@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if proc_id else 'Add' }} Process Monitor — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-cpu"></i>
+          {{ 'Edit: ' + pm.name if proc_id else 'Add Process Monitor' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Display Name <span class="text-danger">*</span></label>
+              <input type="text" name="name"
+                class="form-control {{ 'is-invalid' if errors.get('name') }}"
+                value="{{ pm.name or '' }}"
+                placeholder="e.g. Soft IOC — Beamline A"
+                required autofocus>
+              {% if errors.get('name') %}
+                <div class="invalid-feedback">{{ errors.name }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" class="form-control"
+                value="{{ pm.description or '' }}" placeholder="Optional description">
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Process Matching</h6></div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Match Type <span class="text-danger">*</span></label>
+              <select name="match_type" id="match_type" class="form-select" onchange="updateHint()">
+                {% for val, label in match_types %}
+                <option value="{{ val }}" {{ 'selected' if pm.match_type == val }}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Match Value <span class="text-danger">*</span></label>
+              <input type="text" name="match_value" id="match_value"
+                class="form-control font-monospace {{ 'is-invalid' if errors.get('match_value') }}"
+                value="{{ pm.match_value or '' }}"
+                placeholder="" required>
+              {% if errors.get('match_value') %}
+                <div class="invalid-feedback">{{ errors.match_value }}</div>
+              {% endif %}
+              <small class="text-muted" id="match-hint"></small>
+            </div>
+
+            <div class="col-12">
+              <div class="alert alert-light border py-2 mb-0">
+                <i class="bi bi-lightbulb text-warning"></i>
+                <strong>Tips:</strong>
+                For a soft IOC called <code>softIoc</code>, use <em>name</em> match with value <code>softIoc</code>.
+                For an IOC started as <code>./st.cmd /path/to/beamline.db</code>, use <em>cmdline</em> match
+                with a unique part of the path like <code>beamline.db</code>.
+              </div>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email List</label>
+              <select name="email_list_id" class="form-select">
+                <option value="">— No notification —</option>
+                {% for elist in email_lists %}
+                <option value="{{ elist.id }}"
+                  {{ 'selected' if pm.email_list_id == elist.id }}>
+                  {{ elist.name }} ({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Repeat Notify Interval (s)</label>
+              <input type="number" name="notify_interval" class="form-control"
+                value="{{ pm.notify_interval or 3600 }}" min="60">
+              <small class="text-muted">Seconds between repeat stopped-alerts.</small>
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end pb-1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"
+                  {{ 'checked' if pm.notify_flag is not false }}>
+                <label class="form-check-label" for="notify_flag">Enable notifications</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
+                  {{ 'checked' if pm.enabled is not false }}>
+                <label class="form-check-label" for="enabled">Enable this monitor</label>
+              </div>
+            </div>
+
+          </div>
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if proc_id else 'Add Monitor' }}
+            </button>
+            <a href="{{ url_for('admin.processes') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const hints = {
+  name:    'Partial, case-insensitive match on the process name (e.g. softIoc, python3, caRepeater)',
+  cmdline: 'Substring match on the full command line including arguments (e.g. /path/to/st.cmd)',
+};
+function updateHint() {
+  const t = document.getElementById('match_type').value;
+  document.getElementById('match-hint').textContent = hints[t] || '';
+  const examples = { name: 'softIoc', cmdline: '/beamline/iocs/bl12/st.cmd' };
+  document.getElementById('match_value').placeholder = examples[t] || '';
+}
+updateHint();
+</script>
+{% endblock %}

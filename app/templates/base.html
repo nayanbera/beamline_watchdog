@@ -47,6 +47,12 @@
           </a>
         </li>
         <li class="nav-item">
+          <a class="nav-link {{ 'active' if request.endpoint in ['admin.processes','admin.process_form'] }}"
+             href="{{ url_for('admin.processes') }}">
+            <i class="bi bi-cpu"></i> Processes
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {{ 'active' if request.endpoint == 'admin.logs' }}"
              href="{{ url_for('admin.logs') }}">
             <i class="bi bi-journal-text"></i> Logs

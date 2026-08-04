@@ -1,6 +1,6 @@
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify
-from ..models import PVMonitor, CompoundRule, SystemConfig
+from ..models import PVMonitor, CompoundRule, ProcessMonitor, SystemConfig
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -14,6 +14,7 @@ def _site_name():
 def index():
     pvs = PVMonitor.query.filter_by(enabled=True).order_by(PVMonitor.pv_name).all()
     rules = CompoundRule.query.filter_by(enabled=True).order_by(CompoundRule.name).all()
+    processes = ProcessMonitor.query.filter_by(enabled=True).order_by(ProcessMonitor.name).all()
 
     statuses = [p.status for p in pvs]
     ok_count = statuses.count('OK')
@@ -24,6 +25,7 @@ def index():
         'dashboard.html',
         pvs=pvs,
         rules=rules,
+        processes=processes,
         ok_count=ok_count,
         alarm_count=alarm_count,
         disconnected_count=disc_count,
@@ -37,6 +39,7 @@ def index():
 def api_status():
     pvs = PVMonitor.query.filter_by(enabled=True).all()
     rules = CompoundRule.query.filter_by(enabled=True).all()
+    processes = ProcessMonitor.query.filter_by(enabled=True).all()
 
     pv_data = []
     for p in pvs:
@@ -60,10 +63,23 @@ def api_status():
             'last_checked': r.last_checked.strftime('%H:%M:%S UTC') if r.last_checked else 'Never',
         })
 
+    proc_data = []
+    for pm in processes:
+        proc_data.append({
+            'id': pm.id,
+            'name': pm.name,
+            'match_value': pm.match_value,
+            'status': pm.status,
+            'pid': pm.pid,
+            'last_checked': pm.last_checked.strftime('%H:%M:%S UTC') if pm.last_checked else 'Never',
+            'last_stopped': pm.last_stopped.strftime('%Y-%m-%d %H:%M:%S') if pm.last_stopped else 'Never',
+        })
+
     statuses = [p['status'] for p in pv_data]
     return jsonify({
         'pvs': pv_data,
         'rules': rule_data,
+        'processes': proc_data,
         'ok_count': statuses.count('OK'),
         'alarm_count': statuses.count('ALARM'),
         'disconnected_count': sum(1 for s in statuses if s not in ('OK', 'ALARM')),

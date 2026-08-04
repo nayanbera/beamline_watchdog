@@ -1,11 +1,13 @@
 """
 Background watchdog: periodically reads EPICS PVs, evaluates alarm conditions,
-and sends email notifications when conditions are violated or recover.
+monitors system processes, and sends email notifications.
 """
 import json
 import logging
 import os
 from datetime import datetime
+
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,55 @@ def _rule_recovery_body(rule):
         f"{'='*50}\n"
         f"Rule   : {rule.name}\n\n"
         f"Status : RECOVERED\n"
+        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"This is an automated message from EPICS PV Watchdog.\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Process helpers
+# ---------------------------------------------------------------------------
+
+def _find_process(match_type, match_value):
+    """
+    Search running processes.
+    Returns (is_running: bool, pid: int|None, proc_name: str|None).
+    """
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if match_type == 'name':
+                if proc.info['name'] and match_value.lower() in proc.info['name'].lower():
+                    return True, proc.info['pid'], proc.info['name']
+            elif match_type == 'cmdline':
+                cmdline = ' '.join(proc.info['cmdline'] or [])
+                if match_value in cmdline:
+                    return True, proc.info['pid'], proc.info['name']
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return False, None, None
+
+
+def _proc_stopped_body(pm):
+    return (
+        f"EPICS PV Watchdog — PROCESS STOPPED\n"
+        f"{'='*50}\n"
+        f"Process     : {pm.name}\n"
+        f"Description : {pm.description or 'N/A'}\n"
+        f"Match Type  : {pm.match_type}\n"
+        f"Match Value : {pm.match_value}\n\n"
+        f"Status : STOPPED (process not found)\n"
+        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"This is an automated message from EPICS PV Watchdog.\n"
+    )
+
+
+def _proc_recovery_body(pm):
+    return (
+        f"EPICS PV Watchdog — PROCESS RECOVERED\n"
+        f"{'='*50}\n"
+        f"Process : {pm.name}\n"
+        f"PID     : {pm.pid}\n\n"
+        f"Status : RUNNING\n"
         f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
@@ -241,6 +292,54 @@ def check_all_pvs(app):
             except Exception as exc:
                 logger.exception('Error evaluating rule %s: %s', rule.name, exc)
                 rule.status = 'ERROR'
+
+        db.session.commit()
+
+        # --- Process monitors ---
+        from .models import ProcessMonitor
+        for pm in ProcessMonitor.query.filter_by(enabled=True).all():
+            try:
+                running, pid, proc_name = _find_process(pm.match_type, pm.match_value)
+                prev = pm.status
+                pm.last_checked = now
+
+                if running:
+                    pm.status = 'RUNNING'
+                    pm.pid = pid
+                    if prev == 'STOPPED' and pm.notify_flag and pm.email_list_id:
+                        elist = EmailList.query.get(pm.email_list_id)
+                        if elist:
+                            body = _proc_recovery_body(pm)
+                            ok, err = send_notification_email(
+                                elist.get_emails(),
+                                f'[WATCHDOG PROCESS RUNNING] {pm.name}',
+                                body, cfg)
+                            _log_notification(db, 'PROCESS', pm.id, pm.name,
+                                              'RECOVERED', body, elist.get_emails(), ok, err)
+                else:
+                    pm.status = 'STOPPED'
+                    pm.pid = None
+                    if prev != 'STOPPED':
+                        pm.last_stopped = now
+                    if pm.notify_flag and pm.email_list_id:
+                        ni = pm.notify_interval or default_notify_interval
+                        should = (prev != 'STOPPED' or pm.last_notified is None or
+                                  (now - pm.last_notified).total_seconds() >= ni)
+                        if should:
+                            elist = EmailList.query.get(pm.email_list_id)
+                            if elist:
+                                body = _proc_stopped_body(pm)
+                                ok, err = send_notification_email(
+                                    elist.get_emails(),
+                                    f'[WATCHDOG PROCESS STOPPED] {pm.name}',
+                                    body, cfg)
+                                _log_notification(db, 'PROCESS', pm.id, pm.name,
+                                                  'ALARM', body, elist.get_emails(), ok, err)
+                                pm.last_notified = now
+
+            except Exception as exc:
+                logger.exception('Error checking process %s: %s', pm.name, exc)
+                pm.status = 'UNKNOWN'
 
         db.session.commit()
 

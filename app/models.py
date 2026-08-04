@@ -150,6 +150,34 @@ class NotificationLog(db.Model):
         self._recipients = json.dumps(value if value else [])
 
 
+class ProcessMonitor(db.Model):
+    """
+    Monitor a system process by name or command-line substring.
+    Alarm = process is NOT running.
+    """
+    __tablename__ = 'process_monitors'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)          # display name
+    description = db.Column(db.String(500))
+    # match_type: 'name'    — partial, case-insensitive match on process name
+    #             'cmdline' — substring match on full command-line string
+    match_type = db.Column(db.String(20), default='name')
+    match_value = db.Column(db.String(500), nullable=False)   # string to search for
+    notify_flag = db.Column(db.Boolean, default=True)
+    email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    email_list = db.relationship('EmailList', backref='process_monitors',
+                                 foreign_keys=[email_list_id])
+    enabled = db.Column(db.Boolean, default=True)
+    notify_interval = db.Column(db.Integer, default=3600)
+    # Runtime state — updated by watchdog
+    status = db.Column(db.String(20), default='UNKNOWN')  # RUNNING, STOPPED, UNKNOWN
+    pid = db.Column(db.Integer)
+    last_checked = db.Column(db.DateTime)
+    last_stopped = db.Column(db.DateTime)
+    last_notified = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class SystemConfig(db.Model):
     __tablename__ = 'system_config'
     id = db.Column(db.Integer, primary_key=True)
