@@ -7,7 +7,7 @@ from flask import (Blueprint, render_template, redirect, url_for,
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 
-from .. import db
+from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog)
 
@@ -30,6 +30,7 @@ CONDITION_OPS = [
 # ---------------------------------------------------------------------------
 
 @admin_bp.route('/login', methods=['GET', 'POST'])
+@limiter.limit("20 per minute")
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('admin.index'))
