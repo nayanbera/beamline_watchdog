@@ -74,6 +74,12 @@ def _register_template_globals(app):
     def status_badge(status):
         return _STATUS_BADGE.get(status, 'bg-secondary')
 
+    @app.context_processor
+    def inject_globals():
+        from .models import SystemConfig
+        row = SystemConfig.query.filter_by(key='site_name').first()
+        return {'site_name': row.value if (row and row.value) else 'EPICS PV Watchdog'}
+
 
 def _run_migrations():
     """Add new columns to existing tables so upgrades don't require dropping the database."""

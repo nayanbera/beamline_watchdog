@@ -1,13 +1,8 @@
 from datetime import datetime
 from flask import Blueprint, render_template, jsonify
-from ..models import PVMonitor, CompoundRule, ProcessMonitor, SystemConfig
+from ..models import PVMonitor, CompoundRule, ProcessMonitor
 
 dashboard_bp = Blueprint('dashboard', __name__)
-
-
-def _site_name():
-    row = SystemConfig.query.filter_by(key='site_name').first()
-    return row.value if row else 'EPICS PV Watchdog'
 
 
 @dashboard_bp.route('/')
@@ -31,7 +26,6 @@ def index():
         disconnected_count=disc_count,
         total_count=len(pvs),
         last_updated=datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
-        site_name=_site_name(),
     )
 
 
