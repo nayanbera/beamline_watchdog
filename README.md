@@ -91,6 +91,11 @@ pip install -r requirements.txt
 
 **Option B — conda environment**
 
+> Conda works well for development and on workstations. For a dedicated production server running
+> under systemd, a virtualenv (Option A) is simpler — `conda activate` is a shell function that
+> systemd cannot call directly. See the [systemd service](#systemd-service) section for the
+> wrapper-script workaround if you prefer conda.
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/nayanbera/beamline_watchdog.git
@@ -178,7 +183,34 @@ StandardError=append:/opt/beamline_watchdog/logs/service.log
 WantedBy=multi-user.target
 ```
 
-**If using a conda environment** (replace `/opt/anaconda3` with your actual conda prefix — find it with `conda info --base`):
+**If using a conda environment**
+
+> **Why `conda activate` doesn't work directly in systemd:** systemd runs without a login shell,
+> so `.bashrc` is never sourced and the `conda activate` shell function is not available.
+> The workaround is a small wrapper script that loads conda explicitly before starting Gunicorn.
+
+First, find your conda base prefix:
+
+```bash
+conda info --base
+# e.g. /opt/anaconda3
+```
+
+Create `/opt/beamline_watchdog/start.sh` (replace `/opt/anaconda3` with your actual prefix):
+
+```bash
+#!/bin/bash
+source /opt/anaconda3/etc/profile.d/conda.sh
+conda activate watchdog
+cd /opt/beamline_watchdog
+exec gunicorn -c gunicorn.conf.py wsgi:app
+```
+
+```bash
+chmod +x /opt/beamline_watchdog/start.sh
+```
+
+Then use the script in the service unit:
 
 ```ini
 [Unit]
@@ -191,8 +223,7 @@ User=controls
 Group=controls
 WorkingDirectory=/opt/beamline_watchdog
 EnvironmentFile=/opt/beamline_watchdog/.env
-Environment=PATH=/opt/anaconda3/envs/watchdog/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
-ExecStart=/opt/anaconda3/envs/watchdog/bin/gunicorn -c gunicorn.conf.py wsgi:app
+ExecStart=/opt/beamline_watchdog/start.sh
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/beamline_watchdog/logs/service.log
@@ -202,8 +233,9 @@ StandardError=append:/opt/beamline_watchdog/logs/service.log
 WantedBy=multi-user.target
 ```
 
-> **Tip:** Find the full path to gunicorn in your active conda environment with `which gunicorn`
-> after running `conda activate watchdog`. Use that exact path in `ExecStart`.
+> **Production recommendation:** for a dedicated server a plain **virtualenv is simpler and more
+> reliable** with systemd — no wrapper script needed. Keep conda for interactive development
+> work and use `python3 -m venv venv` for the service.
 
 ```bash
 sudo systemctl daemon-reload
