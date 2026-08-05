@@ -159,11 +159,16 @@
 const hints = {
   name:    'Partial, case-insensitive match on the process name (e.g. softIoc, python3, caRepeater)',
   cmdline: 'Substring match on the full command line including arguments (e.g. /path/to/st.cmd)',
+  command: 'Command to run; exit code 0 = running, non-zero = stopped (e.g. systemctl is-active archappl)',
 };
 function updateHint() {
   const t = document.getElementById('match_type').value;
   document.getElementById('match-hint').textContent = hints[t] || '';
-  const examples = { name: 'softIoc', cmdline: '/beamline/iocs/bl12/st.cmd' };
+  const examples = {
+    name:    'softIoc',
+    cmdline: '/beamline/iocs/bl12/st.cmd',
+    command: 'systemctl is-active archappl',
+  };
   document.getElementById('match_value').placeholder = examples[t] || '';
 }
 updateHint();

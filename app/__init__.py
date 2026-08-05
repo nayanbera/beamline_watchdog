@@ -87,13 +87,18 @@ def _run_migrations():
     with db.engine.connect() as conn:
         result = conn.execute(text("PRAGMA table_info(process_monitors)"))
         existing = {row[1] for row in result}
-        for col, typedef in [
-            ('start_command', 'TEXT'),
-            ('stop_command',  'TEXT'),
-            ('working_dir',   'TEXT'),
-        ]:
+        for col in ('start_command', 'stop_command', 'working_dir'):
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE process_monitors ADD COLUMN {col} TEXT'))
+
+        result = conn.execute(text("PRAGMA table_info(pv_monitors)"))
+        existing = {row[1] for row in result}
+        for col, typedef in [
+            ('notify_on_disconnect',    'INTEGER DEFAULT 0'),
+            ('last_notified_disconnect','DATETIME'),
+        ]:
+            if col not in existing:
+                conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))
         conn.commit()
 
 

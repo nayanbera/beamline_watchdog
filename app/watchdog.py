@@ -55,6 +55,33 @@ def _pv_recovery_body(pv, value):
     )
 
 
+def _pv_disconnect_body(pv):
+    return (
+        f"EPICS PV Watchdog — DISCONNECTED\n"
+        f"{'='*50}\n"
+        f"PV Name   : {pv.pv_name}\n"
+        f"Alias     : {pv.alias or 'N/A'}\n"
+        f"Description: {pv.description or 'N/A'}\n\n"
+        f"The PV could not be reached (Channel Access timeout).\n\n"
+        f"Status : DISCONNECTED\n"
+        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"This is an automated message from EPICS PV Watchdog.\n"
+    )
+
+
+def _pv_reconnect_body(pv, value):
+    return (
+        f"EPICS PV Watchdog — RECONNECTED\n"
+        f"{'='*50}\n"
+        f"PV Name : {pv.pv_name}\n"
+        f"Alias   : {pv.alias or 'N/A'}\n\n"
+        f"Current Value : {value}\n\n"
+        f"Status : RECONNECTED\n"
+        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"This is an automated message from EPICS PV Watchdog.\n"
+    )
+
+
 def _rule_alarm_body(rule, pv_status_map):
     from .models import PVMonitor
     expr = rule.get_expression()
@@ -98,7 +125,24 @@ def _find_process(match_type, match_value):
     """
     Search running processes.
     Returns (is_running: bool, pid: int|None, proc_name: str|None).
+
+    match_type 'command': runs match_value as a shell command; exit code 0 → running.
     """
+    import shlex
+    import subprocess
+
+    if match_type == 'command':
+        try:
+            result = subprocess.run(
+                shlex.split(match_value),
+                capture_output=True,
+                timeout=10,
+            )
+            return result.returncode == 0, None, match_value
+        except Exception as exc:
+            logger.warning('Command check failed for %r: %s', match_value, exc)
+            return False, None, None
+
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             if match_type == 'name':
@@ -181,6 +225,7 @@ def check_all_pvs(app):
                 else:
                     raw = None
 
+                prev = pv.status
                 pv.last_checked = now
 
                 if raw is None:
@@ -188,6 +233,23 @@ def check_all_pvs(app):
                     pv.current_value_str = 'N/A'
                     pv.status = 'DISCONNECTED'
                     pv_status_map[pv.id] = 'DISCONNECTED'
+
+                    if pv.notify_on_disconnect and pv.email_list_id:
+                        ni = pv.notify_interval or default_notify_interval
+                        should = (prev != 'DISCONNECTED' or
+                                  pv.last_notified_disconnect is None or
+                                  (now - pv.last_notified_disconnect).total_seconds() >= ni)
+                        if should:
+                            elist = EmailList.query.get(pv.email_list_id)
+                            if elist:
+                                body = _pv_disconnect_body(pv)
+                                ok, err = send_notification_email(
+                                    elist.get_emails(),
+                                    f'[WATCHDOG DISCONNECTED] {pv.display_name}',
+                                    body, cfg)
+                                _log_notification(db, 'PV', pv.id, pv.pv_name,
+                                                  'DISCONNECTED', body, elist.get_emails(), ok, err)
+                                pv.last_notified_disconnect = now
                 else:
                     try:
                         fval = float(raw)
@@ -199,7 +261,18 @@ def check_all_pvs(app):
 
                     alarm = is_in_alarm(raw, pv.condition_op,
                                         pv.condition_value, pv.condition_value2)
-                    prev = pv.status
+
+                    # Reconnect notification (was disconnected, now readable)
+                    if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_id:
+                        elist = EmailList.query.get(pv.email_list_id)
+                        if elist:
+                            body = _pv_reconnect_body(pv, raw)
+                            ok, err = send_notification_email(
+                                elist.get_emails(),
+                                f'[WATCHDOG RECONNECTED] {pv.display_name}',
+                                body, cfg)
+                            _log_notification(db, 'PV', pv.id, pv.pv_name,
+                                              'RECONNECTED', body, elist.get_emails(), ok, err)
 
                     if alarm is None:
                         pv.status = 'ERROR'
@@ -211,7 +284,7 @@ def check_all_pvs(app):
 
                         if pv.notify_flag and pv.email_list_id:
                             ni = pv.notify_interval or default_notify_interval
-                            should = (prev != 'ALARM' or pv.last_notified is None or
+                            should = (prev not in ('ALARM',) or pv.last_notified is None or
                                       (now - pv.last_notified).total_seconds() >= ni)
                             if should:
                                 elist = EmailList.query.get(pv.email_list_id)

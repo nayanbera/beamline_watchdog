@@ -101,6 +101,7 @@ def pv_form(pv_id=None):
         pv.condition_op = request.form.get('condition_op', '>')
         pv.enabled = 'enabled' in request.form
         pv.notify_flag = 'notify_flag' in request.form
+        pv.notify_on_disconnect = 'notify_on_disconnect' in request.form
 
         try:
             pv.condition_value = float(request.form.get('condition_value', ''))
@@ -497,6 +498,7 @@ def user_delete(user_id):
 MATCH_TYPES = [
     ('name',    'Process name (partial, case-insensitive)'),
     ('cmdline', 'Command-line substring (full command including arguments)'),
+    ('command', 'Shell command (exit code 0 = running, non-zero = stopped)'),
 ]
 
 

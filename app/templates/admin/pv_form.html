@@ -93,11 +93,17 @@
               <small class="text-muted">0 = once per alarm only</small>
             </div>
 
-            <div class="col-md-3 d-flex align-items-center gap-3 pt-4">
+            <div class="col-md-3 d-flex flex-column justify-content-center gap-2 pt-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"
                   {{ 'checked' if pv.notify_flag is not false }}>
-                <label class="form-check-label" for="notify_flag">Enable notifications</label>
+                <label class="form-check-label" for="notify_flag">Notify on alarm</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="notify_on_disconnect"
+                  id="notify_on_disconnect"
+                  {{ 'checked' if pv.notify_on_disconnect }}>
+                <label class="form-check-label" for="notify_on_disconnect">Notify on disconnect</label>
               </div>
             </div>
 

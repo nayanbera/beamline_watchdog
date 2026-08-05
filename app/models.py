@@ -59,6 +59,7 @@ class PVMonitor(db.Model):
     condition_value = db.Column(db.Float, nullable=False)
     condition_value2 = db.Column(db.Float)           # used for in_range / out_range
     notify_flag = db.Column(db.Boolean, default=True)
+    notify_on_disconnect = db.Column(db.Boolean, default=False)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
     email_list = db.relationship('EmailList', backref='pv_monitors', foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
@@ -70,6 +71,7 @@ class PVMonitor(db.Model):
     last_checked = db.Column(db.DateTime)
     last_alarm = db.Column(db.DateTime)
     last_notified = db.Column(db.DateTime)
+    last_notified_disconnect = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
