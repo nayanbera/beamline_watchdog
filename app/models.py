@@ -154,6 +154,7 @@ class ProcessMonitor(db.Model):
     """
     Monitor a system process by name or command-line substring.
     Alarm = process is NOT running.
+    Optional start_command / stop_command allow admins to control the process from the UI.
     """
     __tablename__ = 'process_monitors'
     id = db.Column(db.Integer, primary_key=True)
@@ -169,6 +170,10 @@ class ProcessMonitor(db.Model):
                                  foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
     notify_interval = db.Column(db.Integer, default=3600)
+    # Optional control commands (blank = not configurable from UI)
+    start_command = db.Column(db.String(1000))  # shell command to start this process
+    stop_command = db.Column(db.String(1000))   # shell command for graceful stop; blank = SIGTERM by PID
+    working_dir = db.Column(db.String(500))     # working directory for start_command
     # Runtime state — updated by watchdog
     status = db.Column(db.String(20), default='UNKNOWN')  # RUNNING, STOPPED, UNKNOWN
     pid = db.Column(db.Integer)
@@ -176,6 +181,20 @@ class ProcessMonitor(db.Model):
     last_stopped = db.Column(db.DateTime)
     last_notified = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ActionLog(db.Model):
+    """Audit log for admin-initiated process start/stop/kill actions."""
+    __tablename__ = 'action_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    admin_username = db.Column(db.String(80), nullable=False)
+    action = db.Column(db.String(10), nullable=False)   # START, STOP, KILL
+    process_id = db.Column(db.Integer)
+    process_name = db.Column(db.String(200))
+    command = db.Column(db.String(1000))
+    success = db.Column(db.Boolean)
+    output = db.Column(db.Text)
 
 
 class SystemConfig(db.Model):

@@ -66,6 +66,40 @@
               </div>
             </div>
 
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Control Commands <span class="badge bg-secondary fw-normal ms-1">optional</span></h6></div>
+
+            <div class="col-12">
+              <div class="alert alert-light border py-2 mb-0">
+                <i class="bi bi-shield-lock text-primary"></i>
+                Commands are stored once and executed by the server — only admins can trigger them.
+                Use full paths (e.g. <code>/usr/local/bin/myioc start</code>).
+                Arguments are split safely; shell features like pipes are not supported.
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Start Command</label>
+              <input type="text" name="start_command" class="form-control font-monospace"
+                value="{{ pm.start_command or '' }}"
+                placeholder="/path/to/start_ioc.sh  or  systemctl start my-ioc">
+              <small class="text-muted">Run this command to start the process. Leave blank to disable the Start button.</small>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Stop Command</label>
+              <input type="text" name="stop_command" class="form-control font-monospace"
+                value="{{ pm.stop_command or '' }}"
+                placeholder="/path/to/stop_ioc.sh  (blank = send SIGTERM to the monitored PID)">
+              <small class="text-muted">If blank, the watchdog sends SIGTERM to the process it found. Fill in for graceful shutdown scripts.</small>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Working Directory</label>
+              <input type="text" name="working_dir" class="form-control font-monospace"
+                value="{{ pm.working_dir or '' }}"
+                placeholder="/path/to/ioc  (optional — defaults to server working directory)">
+            </div>
+
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
 
             <div class="col-md-6">

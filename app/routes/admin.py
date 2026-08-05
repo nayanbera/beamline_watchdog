@@ -1,4 +1,6 @@
 import json
+import shlex
+import subprocess
 from datetime import datetime
 from flask import (Blueprint, render_template, redirect, url_for,
                    flash, request, abort)
@@ -7,7 +9,7 @@ from werkzeug.security import check_password_hash
 
 from .. import db
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
-                      ProcessMonitor, NotificationLog, SystemConfig)
+                      ProcessMonitor, NotificationLog, SystemConfig, ActionLog)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -501,7 +503,11 @@ MATCH_TYPES = [
 @login_required
 def processes():
     items = ProcessMonitor.query.order_by(ProcessMonitor.name).all()
-    return render_template('admin/processes.html', processes=items)
+    recent_actions = (ActionLog.query
+                      .order_by(ActionLog.timestamp.desc())
+                      .limit(10).all())
+    return render_template('admin/processes.html',
+                           processes=items, recent_actions=recent_actions)
 
 
 @admin_bp.route('/processes/add', methods=['GET', 'POST'])
@@ -517,6 +523,9 @@ def process_form(proc_id=None):
         pm.description = request.form.get('description', '').strip() or None
         pm.match_type = request.form.get('match_type', 'name')
         pm.match_value = request.form.get('match_value', '').strip()
+        pm.start_command = request.form.get('start_command', '').strip() or None
+        pm.stop_command = request.form.get('stop_command', '').strip() or None
+        pm.working_dir = request.form.get('working_dir', '').strip() or None
         pm.notify_flag = 'notify_flag' in request.form
         pm.enabled = 'enabled' in request.form
 
@@ -564,3 +573,137 @@ def process_toggle(proc_id):
     db.session.commit()
     flash(f'Process monitor "{pm.name}" {"enabled" if pm.enabled else "disabled"}.', 'info')
     return redirect(url_for('admin.processes'))
+
+
+# ---------------------------------------------------------------------------
+# Process control helpers
+# ---------------------------------------------------------------------------
+
+def _proc_start(pm):
+    if not pm.start_command:
+        return False, "No start command configured."
+    try:
+        cmd = shlex.split(pm.start_command)
+        kwargs = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      start_new_session=True)
+        if pm.working_dir:
+            kwargs['cwd'] = pm.working_dir
+        proc = subprocess.Popen(cmd, **kwargs)
+        return True, f"Started (PID {proc.pid})"
+    except FileNotFoundError as exc:
+        return False, f"Command not found: {exc}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _proc_stop(pm):
+    if pm.stop_command:
+        try:
+            cmd = shlex.split(pm.stop_command)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            out = (result.stdout + result.stderr).strip()
+            return result.returncode == 0, out or (
+                "Stop command succeeded." if result.returncode == 0
+                else f"Exit {result.returncode}.")
+        except subprocess.TimeoutExpired:
+            return False, "Stop command timed out after 15 s."
+        except Exception as exc:
+            return False, str(exc)
+    elif pm.pid:
+        try:
+            import psutil
+            p = psutil.Process(pm.pid)
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+                return True, f"PID {pm.pid} terminated (SIGTERM)."
+            except psutil.TimeoutExpired:
+                p.kill()
+                return True, f"PID {pm.pid} killed (SIGKILL after SIGTERM timeout)."
+        except psutil.NoSuchProcess:
+            return False, f"No process with PID {pm.pid}."
+        except Exception as exc:
+            return False, str(exc)
+    else:
+        return False, "No stop command and no known PID."
+
+
+def _proc_kill(pm):
+    if not pm.pid:
+        return False, "No known PID."
+    try:
+        import psutil
+        psutil.Process(pm.pid).kill()
+        return True, f"PID {pm.pid} killed (SIGKILL)."
+    except psutil.NoSuchProcess:
+        return False, f"No process with PID {pm.pid}."
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _log_action(pm, action, command, success, output):
+    db.session.add(ActionLog(
+        admin_username=current_user.username,
+        action=action,
+        process_id=pm.id,
+        process_name=pm.name,
+        command=command or '',
+        success=success,
+        output=output,
+    ))
+    db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Process start / stop / kill routes
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/processes/<int:proc_id>/start', methods=['POST'])
+@login_required
+def process_start(proc_id):
+    pm = ProcessMonitor.query.get_or_404(proc_id)
+    success, output = _proc_start(pm)
+    _log_action(pm, 'START', pm.start_command, success, output)
+    flash(f'Start {"succeeded" if success else "failed"}: {output}',
+          'success' if success else 'danger')
+    next_url = request.form.get('next') or url_for('admin.processes')
+    return redirect(next_url)
+
+
+@admin_bp.route('/processes/<int:proc_id>/stop', methods=['POST'])
+@login_required
+def process_stop(proc_id):
+    pm = ProcessMonitor.query.get_or_404(proc_id)
+    success, output = _proc_stop(pm)
+    _log_action(pm, 'STOP', pm.stop_command or f'kill {pm.pid}', success, output)
+    flash(f'Stop {"succeeded" if success else "failed"}: {output}',
+          'success' if success else 'danger')
+    next_url = request.form.get('next') or url_for('admin.processes')
+    return redirect(next_url)
+
+
+@admin_bp.route('/processes/<int:proc_id>/kill', methods=['POST'])
+@login_required
+def process_kill(proc_id):
+    pm = ProcessMonitor.query.get_or_404(proc_id)
+    success, output = _proc_kill(pm)
+    _log_action(pm, 'KILL', f'kill -9 {pm.pid}', success, output)
+    flash(f'Kill {"succeeded" if success else "failed"}: {output}',
+          'success' if success else 'danger')
+    next_url = request.form.get('next') or url_for('admin.processes')
+    return redirect(next_url)
+
+
+# ---------------------------------------------------------------------------
+# Action log
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/processes/action-log')
+@login_required
+def action_logs():
+    page = request.args.get('page', 1, type=int)
+    pagination = (ActionLog.query
+                  .order_by(ActionLog.timestamp.desc())
+                  .paginate(page=page, per_page=50, error_out=False))
+    return render_template('admin/action_logs.html',
+                           logs=pagination.items, pagination=pagination)

@@ -33,6 +33,7 @@ def create_app():
         from . import models  # noqa: F401
         from . import auth    # noqa: F401  registers user_loader
         db.create_all()
+        _run_migrations()
         _initialize_defaults()
 
     from .routes.dashboard import dashboard_bp
@@ -62,6 +63,22 @@ def _register_template_globals(app):
     @app.template_global()
     def status_badge(status):
         return _STATUS_BADGE.get(status, 'bg-secondary')
+
+
+def _run_migrations():
+    """Add new columns to existing tables so upgrades don't require dropping the database."""
+    from sqlalchemy import text
+    with db.engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(process_monitors)"))
+        existing = {row[1] for row in result}
+        for col, typedef in [
+            ('start_command', 'TEXT'),
+            ('stop_command',  'TEXT'),
+            ('working_dir',   'TEXT'),
+        ]:
+            if col not in existing:
+                conn.execute(text(f'ALTER TABLE process_monitors ADD COLUMN {col} TEXT'))
+        conn.commit()
 
 
 def _initialize_defaults():
