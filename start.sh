@@ -12,6 +12,8 @@
 
 # ---- configure these for your machine ----
 CONDA_ENV="watchdog"       # conda environment name (leave blank to skip conda)
+CONDA_BASE=""              # set this if conda is not on PATH (e.g. /opt/anaconda3)
+                           # leave blank to auto-detect via 'conda info --base'
 VENV_PATH="venv"           # path to virtualenv relative to project dir (used if conda not found)
 # ------------------------------------------
 
@@ -51,8 +53,11 @@ echo "Port $PORT is free."
 # ---- activate environment ----
 ACTIVATED=0
 
-if [ -n "$CONDA_ENV" ] && command -v conda &>/dev/null; then
-    CONDA_BASE=$(conda info --base 2>/dev/null)
+if [ -n "$CONDA_ENV" ]; then
+    # Use hardcoded CONDA_BASE if set, otherwise auto-detect via 'conda info --base'
+    if [ -z "$CONDA_BASE" ]; then
+        CONDA_BASE=$(conda info --base 2>/dev/null)
+    fi
     if [ -n "$CONDA_BASE" ] && [ -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then
         source "$CONDA_BASE/etc/profile.d/conda.sh"
         if conda activate "$CONDA_ENV" 2>/dev/null; then
@@ -61,6 +66,8 @@ if [ -n "$CONDA_ENV" ] && command -v conda &>/dev/null; then
         else
             echo "WARNING: conda env '$CONDA_ENV' not found — trying venv..." >&2
         fi
+    else
+        echo "WARNING: conda not found at '$CONDA_BASE' — trying venv..." >&2
     fi
 fi
 
