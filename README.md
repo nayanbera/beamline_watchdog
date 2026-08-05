@@ -41,6 +41,14 @@ A web-based EPICS PV and process watchdog. Monitors process variables against co
 ## Quick Start (development)
 
 ```bash
+# With conda
+conda create -n watchdog python=3.11 -y && conda activate watchdog
+conda install -c conda-forge pyepics -y
+
+# Or with venv
+python3 -m venv venv && source venv/bin/activate
+
+# Then, either way:
 cd beamline_watchdog
 pip install -r requirements.txt
 cp .env.example .env          # edit .env — set SECRET_KEY at minimum
@@ -66,6 +74,8 @@ Go to **http://localhost:5001/admin** — default credentials `admin` / `admin` 
 
 ### Install the application
 
+**Option A — virtualenv (recommended for servers)**
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/nayanbera/beamline_watchdog.git
@@ -76,6 +86,23 @@ python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 
 # 3. Install Python dependencies
+pip install -r requirements.txt
+```
+
+**Option B — conda environment**
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/nayanbera/beamline_watchdog.git
+cd beamline_watchdog
+
+# 2. Create and activate a conda environment
+conda create -n watchdog python=3.11 -y
+conda activate watchdog
+
+# 3. Install Python dependencies
+#    pyepics is available on conda-forge; everything else comes from pip
+conda install -c conda-forge pyepics -y
 pip install -r requirements.txt
 ```
 
@@ -126,7 +153,9 @@ nohup gunicorn -c gunicorn.conf.py wsgi:app > logs/gunicorn.log 2>&1 &
 
 ### systemd service
 
-Create `/etc/systemd/system/beamline-watchdog.service`:
+Create `/etc/systemd/system/beamline-watchdog.service`.
+
+**If using a virtualenv:**
 
 ```ini
 [Unit]
@@ -148,6 +177,33 @@ StandardError=append:/opt/beamline_watchdog/logs/service.log
 [Install]
 WantedBy=multi-user.target
 ```
+
+**If using a conda environment** (replace `/opt/anaconda3` with your actual conda prefix — find it with `conda info --base`):
+
+```ini
+[Unit]
+Description=Beamline PV Watchdog
+After=network.target
+
+[Service]
+Type=simple
+User=controls
+Group=controls
+WorkingDirectory=/opt/beamline_watchdog
+EnvironmentFile=/opt/beamline_watchdog/.env
+Environment=PATH=/opt/anaconda3/envs/watchdog/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/opt/anaconda3/envs/watchdog/bin/gunicorn -c gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/beamline_watchdog/logs/service.log
+StandardError=append:/opt/beamline_watchdog/logs/service.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Tip:** Find the full path to gunicorn in your active conda environment with `which gunicorn`
+> after running `conda activate watchdog`. Use that exact path in `ExecStart`.
 
 ```bash
 sudo systemctl daemon-reload
