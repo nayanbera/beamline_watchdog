@@ -196,7 +196,7 @@ conda info --base
 # e.g. /opt/anaconda3
 ```
 
-Create `/opt/beamline_watchdog/start.sh` (replace `/opt/anaconda3` with your actual prefix):
+The repository includes `start.sh` — copy it to your deployment directory and edit the two variables at the top (replace `/opt/anaconda3` with your actual prefix):
 
 ```bash
 #!/bin/bash
