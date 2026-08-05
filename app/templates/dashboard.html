@@ -12,7 +12,7 @@
 
 <!-- Summary cards -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body text-center py-3">
         <div class="display-6 fw-bold text-success" id="ok-count">{{ ok_count }}</div>
@@ -20,7 +20,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md">
     <div class="card border-0 shadow-sm h-100 {{ 'border-danger border-2' if alarm_count > 0 }}">
       <div class="card-body text-center py-3">
         <div class="display-6 fw-bold text-danger" id="alarm-count">{{ alarm_count }}</div>
@@ -28,7 +28,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body text-center py-3">
         <div class="display-6 fw-bold text-warning" id="disc-count">{{ disconnected_count }}</div>
@@ -36,11 +36,19 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-body text-center py-3">
         <div class="display-6 fw-bold text-secondary" id="total-count">{{ total_count }}</div>
         <div class="text-muted small">TOTAL PVs</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md">
+    <div class="card border-0 shadow-sm h-100 {{ 'border-secondary border-2' if disabled_count > 0 }}">
+      <div class="card-body text-center py-3">
+        <div class="display-6 fw-bold text-secondary" id="disabled-count">{{ disabled_count }}</div>
+        <div class="text-muted small">DISABLED</div>
       </div>
     </div>
   </div>
@@ -69,11 +77,15 @@
       </thead>
       <tbody id="pv-tbody">
         {% for pv in pvs %}
-        <tr id="pv-row-{{ pv.id }}" class="{{ 'table-danger' if pv.status == 'ALARM' else ('table-warning' if pv.status in ['DISCONNECTED','ERROR'] else '') }}">
+        <tr id="pv-row-{{ pv.id }}" class="{{ 'table-danger' if pv.status == 'ALARM' and pv.enabled else ('table-warning' if pv.status in ['DISCONNECTED','ERROR'] and pv.enabled else ('text-muted' if not pv.enabled else '')) }}">
           <td>
-            <span class="badge {{ status_badge(pv.status) }}" id="pv-badge-{{ pv.id }}">
-              {{ pv.status }}
-            </span>
+            {% if not pv.enabled %}
+              <span class="badge bg-secondary" id="pv-badge-{{ pv.id }}">DISABLED</span>
+            {% else %}
+              <span class="badge {{ status_badge(pv.status) }}" id="pv-badge-{{ pv.id }}">
+                {{ pv.status }}
+              </span>
+            {% endif %}
           </td>
           <td><code class="small">{{ pv.pv_name }}</code></td>
           <td class="text-muted">{{ pv.alias or '' }}</td>
@@ -116,7 +128,7 @@
 </div>
 
 <!-- Process Monitors -->
-{% if processes %}
+{% if processes or disabled_count %}
 <div class="card shadow-sm mb-4">
   <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
     <span><i class="bi bi-cpu"></i> Process Monitor Status</span>
@@ -139,12 +151,16 @@
       </thead>
       <tbody id="proc-tbody">
         {% for pm in processes %}
-        <tr id="proc-row-{{ pm.id }}" class="{{ 'table-danger' if pm.status == 'STOPPED' else '' }}">
+        <tr id="proc-row-{{ pm.id }}" class="{{ 'table-danger' if pm.status == 'STOPPED' and pm.enabled else ('text-muted' if not pm.enabled else '') }}">
           <td>
-            <span class="badge {{ 'bg-success' if pm.status == 'RUNNING' else ('bg-danger' if pm.status == 'STOPPED' else 'bg-secondary') }}"
-                  id="proc-badge-{{ pm.id }}">
-              {{ pm.status }}
-            </span>
+            {% if not pm.enabled %}
+              <span class="badge bg-secondary" id="proc-badge-{{ pm.id }}">DISABLED</span>
+            {% else %}
+              <span class="badge {{ 'bg-success' if pm.status == 'RUNNING' else ('bg-danger' if pm.status == 'STOPPED' else 'bg-secondary') }}"
+                    id="proc-badge-{{ pm.id }}">
+                {{ pm.status }}
+              </span>
+            {% endif %}
           </td>
           <td><strong>{{ pm.name }}</strong>
             {% if pm.description %}<br><small class="text-muted">{{ pm.description }}</small>{% endif %}
@@ -225,11 +241,15 @@
       </thead>
       <tbody id="rules-tbody">
         {% for rule in rules %}
-        <tr id="rule-row-{{ rule.id }}" class="{{ 'table-danger' if rule.status == 'ALARM' else '' }}">
+        <tr id="rule-row-{{ rule.id }}" class="{{ 'table-danger' if rule.status == 'ALARM' and rule.enabled else ('text-muted' if not rule.enabled else '') }}">
           <td>
-            <span class="badge {{ status_badge(rule.status) }}" id="rule-badge-{{ rule.id }}">
-              {{ rule.status }}
-            </span>
+            {% if not rule.enabled %}
+              <span class="badge bg-secondary" id="rule-badge-{{ rule.id }}">DISABLED</span>
+            {% else %}
+              <span class="badge {{ status_badge(rule.status) }}" id="rule-badge-{{ rule.id }}">
+                {{ rule.status }}
+              </span>
+            {% endif %}
           </td>
           <td>{{ rule.name }}</td>
           <td><span class="badge bg-info text-dark">{{ rule.logic_op }}</span></td>
@@ -273,18 +293,22 @@ async function refresh() {
     if (!r.ok) return;
     const d = await r.json();
 
-    document.getElementById('ok-count').textContent    = d.ok_count;
-    document.getElementById('alarm-count').textContent = d.alarm_count;
-    document.getElementById('disc-count').textContent  = d.disconnected_count;
-    document.getElementById('total-count').textContent = d.total_count;
-    document.getElementById('last-updated').textContent = d.last_updated;
+    document.getElementById('ok-count').textContent       = d.ok_count;
+    document.getElementById('alarm-count').textContent    = d.alarm_count;
+    document.getElementById('disc-count').textContent     = d.disconnected_count;
+    document.getElementById('total-count').textContent    = d.total_count;
+    document.getElementById('disabled-count').textContent = d.disabled_count;
+    document.getElementById('last-updated').textContent   = d.last_updated;
 
     (d.pvs || []).forEach(p => {
       const row = document.getElementById(`pv-row-${p.id}`);
       if (!row) return;
-      row.className = rowClass(p.status);
+      row.className = !p.enabled ? 'text-muted' : rowClass(p.status);
       const badge = document.getElementById(`pv-badge-${p.id}`);
-      if (badge) { badge.textContent = p.status; badge.className = `badge ${statusBadge(p.status)}`; }
+      if (badge) {
+        badge.textContent = p.enabled ? p.status : 'DISABLED';
+        badge.className = `badge ${p.enabled ? statusBadge(p.status) : 'bg-secondary'}`;
+      }
       const val = document.getElementById(`pv-val-${p.id}`);
       if (val) val.textContent = p.current_value;
       const chk = document.getElementById(`pv-checked-${p.id}`);
@@ -298,9 +322,12 @@ async function refresh() {
     (d.rules || []).forEach(r => {
       const row = document.getElementById(`rule-row-${r.id}`);
       if (!row) return;
-      row.className = rowClass(r.status);
+      row.className = !r.enabled ? 'text-muted' : rowClass(r.status);
       const badge = document.getElementById(`rule-badge-${r.id}`);
-      if (badge) { badge.textContent = r.status; badge.className = `badge ${statusBadge(r.status)}`; }
+      if (badge) {
+        badge.textContent = r.enabled ? r.status : 'DISABLED';
+        badge.className = `badge ${r.enabled ? statusBadge(r.status) : 'bg-secondary'}`;
+      }
       const chk = document.getElementById(`rule-checked-${r.id}`);
       if (chk) chk.textContent = r.last_checked;
     });
@@ -308,10 +335,13 @@ async function refresh() {
     (d.processes || []).forEach(p => {
       const row = document.getElementById(`proc-row-${p.id}`);
       if (!row) return;
-      row.className = p.status === 'STOPPED' ? 'table-danger' : '';
+      row.className = !p.enabled ? 'text-muted' : (p.status === 'STOPPED' ? 'table-danger' : '');
       const badge = document.getElementById(`proc-badge-${p.id}`);
-      const bc = p.status === 'RUNNING' ? 'bg-success' : (p.status === 'STOPPED' ? 'bg-danger' : 'bg-secondary');
-      if (badge) { badge.textContent = p.status; badge.className = `badge ${bc}`; }
+      if (badge) {
+        const bc = p.status === 'RUNNING' ? 'bg-success' : (p.status === 'STOPPED' ? 'bg-danger' : 'bg-secondary');
+        badge.textContent = p.enabled ? p.status : 'DISABLED';
+        badge.className = `badge ${p.enabled ? bc : 'bg-secondary'}`;
+      }
       const pid = document.getElementById(`proc-pid-${p.id}`);
       if (pid) pid.textContent = p.pid || '—';
       const chk = document.getElementById(`proc-checked-${p.id}`);
