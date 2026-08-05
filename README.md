@@ -156,6 +156,53 @@ To run in the background without a service manager:
 nohup gunicorn -c gunicorn.conf.py wsgi:app > logs/gunicorn.log 2>&1 &
 ```
 
+### Using start.sh
+
+The repository includes `start.sh`, a wrapper script that handles port checking and environment
+activation automatically. It is the recommended way to start the app manually or from a systemd
+service.
+
+**Before first use**, edit the two variables at the top of `start.sh` to match your setup:
+
+```bash
+CONDA_ENV="watchdog"   # your conda environment name (leave blank to skip conda)
+VENV_PATH="venv"       # path to virtualenv, used if conda env is not found
+```
+
+**Usage:**
+
+```bash
+./start.sh            # start normally — exits with an error if the port is busy
+./start.sh --force    # kill whatever is on the port, then start
+```
+
+**What the script does at each step:**
+
+1. Reads `PORT` from `.env` (defaults to 5001 if not set)
+2. Checks the port with `lsof` — if busy, shows which process holds it and how to fix it
+3. Activates the Python environment — tries conda first (sources `conda.sh` so it works
+   outside a login shell), falls back to the virtualenv, falls back to the system PATH
+4. Verifies `gunicorn` is available — exits with a clear error if not found
+5. Starts Gunicorn with `exec` so OS signals (SIGTERM, SIGINT) pass through correctly
+
+**Example output — port free:**
+
+```
+Port 5001 is free.
+Activated conda environment: watchdog
+Starting Beamline Watchdog on port 5001...
+```
+
+**Example output — port busy, no --force:**
+
+```
+ERROR: port 5001 is already in use:
+COMMAND   PID     USER  ...  NAME
+python3  1234  controls  ...  TCP *:5001 (LISTEN)
+
+To kill the existing process and restart:  ./start.sh --force
+```
+
 ### systemd service
 
 Create `/etc/systemd/system/beamline-watchdog.service`.
