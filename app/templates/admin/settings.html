@@ -75,6 +75,38 @@
               <input type="text" name="site_name" class="form-control"
                 value="{{ cfg.get('site_name', 'EPICS PV Watchdog') }}">
             </div>
+            <div class="col-md-6">
+              <label class="form-label">Display Timezone</label>
+              <select name="timezone" class="form-select">
+                {% set cur_tz = cfg.get('timezone', 'UTC') %}
+                <optgroup label="UTC">
+                  <option value="UTC" {{ 'selected' if cur_tz == 'UTC' }}>UTC</option>
+                </optgroup>
+                <optgroup label="US / Canada">
+                  <option value="America/New_York"    {{ 'selected' if cur_tz == 'America/New_York' }}>Eastern — America/New_York</option>
+                  <option value="America/Chicago"     {{ 'selected' if cur_tz == 'America/Chicago' }}>Central — America/Chicago</option>
+                  <option value="America/Denver"      {{ 'selected' if cur_tz == 'America/Denver' }}>Mountain — America/Denver</option>
+                  <option value="America/Los_Angeles" {{ 'selected' if cur_tz == 'America/Los_Angeles' }}>Pacific — America/Los_Angeles</option>
+                  <option value="America/Anchorage"   {{ 'selected' if cur_tz == 'America/Anchorage' }}>Alaska — America/Anchorage</option>
+                  <option value="Pacific/Honolulu"    {{ 'selected' if cur_tz == 'Pacific/Honolulu' }}>Hawaii — Pacific/Honolulu</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="Europe/London"    {{ 'selected' if cur_tz == 'Europe/London' }}>Europe/London</option>
+                  <option value="Europe/Paris"     {{ 'selected' if cur_tz == 'Europe/Paris' }}>Europe/Paris</option>
+                  <option value="Europe/Berlin"    {{ 'selected' if cur_tz == 'Europe/Berlin' }}>Europe/Berlin</option>
+                  <option value="Europe/Stockholm" {{ 'selected' if cur_tz == 'Europe/Stockholm' }}>Europe/Stockholm</option>
+                  <option value="Europe/Moscow"    {{ 'selected' if cur_tz == 'Europe/Moscow' }}>Europe/Moscow</option>
+                </optgroup>
+                <optgroup label="Asia / Pacific">
+                  <option value="Asia/Kolkata"    {{ 'selected' if cur_tz == 'Asia/Kolkata' }}>India — Asia/Kolkata</option>
+                  <option value="Asia/Shanghai"   {{ 'selected' if cur_tz == 'Asia/Shanghai' }}>China — Asia/Shanghai</option>
+                  <option value="Asia/Tokyo"      {{ 'selected' if cur_tz == 'Asia/Tokyo' }}>Japan — Asia/Tokyo</option>
+                  <option value="Asia/Seoul"      {{ 'selected' if cur_tz == 'Asia/Seoul' }}>Korea — Asia/Seoul</option>
+                  <option value="Australia/Sydney" {{ 'selected' if cur_tz == 'Australia/Sydney' }}>Sydney — Australia/Sydney</option>
+                </optgroup>
+              </select>
+              <small class="text-muted">All timestamps on the dashboard and admin pages use this timezone.</small>
+            </div>
           </div>
 
           <hr>

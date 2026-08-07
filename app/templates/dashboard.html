@@ -100,11 +100,11 @@
           </td>
           <td class="small text-muted">{{ pv.condition_str }}</td>
           <td class="small" id="pv-checked-{{ pv.id }}">
-            {{ pv.last_checked.strftime('%H:%M:%S') if pv.last_checked else '—' }}
+            {{ localdt(pv.last_checked, '%H:%M:%S %Z') }}
           </td>
           <td class="small" id="pv-alarm-{{ pv.id }}">
             {% if pv.last_alarm %}
-              <span class="text-danger">{{ pv.last_alarm.strftime('%Y-%m-%d %H:%M') }}</span>
+              <span class="text-danger">{{ localdt(pv.last_alarm, '%Y-%m-%d %H:%M') }}</span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
@@ -173,11 +173,11 @@
             {{ pm.pid if pm.pid else '—' }}
           </td>
           <td class="small" id="proc-checked-{{ pm.id }}">
-            {{ pm.last_checked.strftime('%H:%M:%S') if pm.last_checked else '—' }}
+            {{ localdt(pm.last_checked, '%H:%M:%S %Z') }}
           </td>
           <td class="small" id="proc-stopped-{{ pm.id }}">
             {% if pm.last_stopped %}
-              <span class="text-danger">{{ pm.last_stopped.strftime('%Y-%m-%d %H:%M') }}</span>
+              <span class="text-danger">{{ localdt(pm.last_stopped, '%Y-%m-%d %H:%M') }}</span>
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
@@ -255,7 +255,7 @@
           <td><span class="badge bg-info text-dark">{{ rule.logic_op }}</span></td>
           <td class="text-muted small">{{ rule.description or '' }}</td>
           <td class="small" id="rule-checked-{{ rule.id }}">
-            {{ rule.last_checked.strftime('%H:%M:%S') if rule.last_checked else '—' }}
+            {{ localdt(rule.last_checked, '%H:%M:%S %Z') }}
           </td>
         </tr>
         {% endfor %}

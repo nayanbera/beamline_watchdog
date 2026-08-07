@@ -76,9 +76,25 @@ def _register_template_globals(app):
 
     @app.context_processor
     def inject_globals():
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         from .models import SystemConfig
-        row = SystemConfig.query.filter_by(key='site_name').first()
-        return {'site_name': row.value if (row and row.value) else 'EPICS PV Watchdog'}
+
+        cfg = {r.key: r.value for r in SystemConfig.query.all()}
+        site_name = cfg.get('site_name') or 'EPICS PV Watchdog'
+        tz_name = cfg.get('timezone') or 'UTC'
+
+        try:
+            tz = ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, KeyError):
+            tz = ZoneInfo('UTC')
+            tz_name = 'UTC'
+
+        def localdt(dt, fmt='%Y-%m-%d %H:%M:%S'):
+            if dt is None:
+                return '—'
+            return dt.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime(fmt)
+
+        return {'site_name': site_name, 'tz_name': tz_name, 'localdt': localdt}
 
 
 def _run_migrations():
@@ -128,6 +144,7 @@ def _initialize_defaults():
         ('check_interval',         '10',                 'How often to check PVs (seconds)'),
         ('default_notify_interval','3600',               'Min seconds between repeated notifications'),
         ('site_name',              'EPICS PV Watchdog',  'Site name shown in page header'),
+        ('timezone',               'UTC',                'Display timezone for all timestamps (IANA name, e.g. America/Chicago)'),
         ('epics_ca_addr_list',     '',                   'EPICS_CA_ADDR_LIST — space-separated CA broadcast/unicast addresses'),
         ('epics_ca_auto_addr_list','YES',                'EPICS_CA_AUTO_ADDR_LIST — YES or NO'),
     ]
