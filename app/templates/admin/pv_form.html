@@ -71,6 +71,18 @@
               {% endif %}
             </div>
 
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="category_id" class="form-select">
+                <option value="">— Uncategorized —</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {{ 'selected' if pv.category_id == cat.id }}>
+                  {{ cat.name }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
 
             <div class="col-md-6">

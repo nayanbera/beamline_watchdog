@@ -30,6 +30,12 @@
         </li>
         {% if current_user.is_authenticated %}
         <li class="nav-item">
+          <a class="nav-link {{ 'active' if request.endpoint in ['admin.categories','admin.category_form'] }}"
+             href="{{ url_for('admin.categories') }}">
+            <i class="bi bi-folder2-open"></i> Categories
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {{ 'active' if request.endpoint == 'admin.pvs' }}"
              href="{{ url_for('admin.pvs') }}">
             <i class="bi bi-list-check"></i> PVs

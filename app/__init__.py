@@ -112,9 +112,15 @@ def _run_migrations():
         for col, typedef in [
             ('notify_on_disconnect',    'INTEGER DEFAULT 0'),
             ('last_notified_disconnect','DATETIME'),
+            ('category_id',             'INTEGER REFERENCES categories(id)'),
         ]:
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))
+
+        result = conn.execute(text("PRAGMA table_info(process_monitors)"))
+        existing = {row[1] for row in result}
+        if 'category_id' not in existing:
+            conn.execute(text('ALTER TABLE process_monitors ADD COLUMN category_id INTEGER REFERENCES categories(id)'))
         conn.commit()
 
 

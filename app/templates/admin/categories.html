@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Categories — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-folder2-open"></i> Categories</h4>
+  <a href="{{ url_for('admin.category_form') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg"></i> Add Category
+  </a>
+</div>
+
+<p class="text-muted small">
+  Categories group PV monitors and process monitors on the dashboard.
+  Assign a category when adding or editing a monitor, or change it at any time.
+</p>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+          <th class="text-center">PVs</th>
+          <th class="text-center">Processes</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in categories %}
+        <tr>
+          <td><strong>{{ cat.name }}</strong></td>
+          <td class="text-muted small">{{ cat.description or '—' }}</td>
+          <td class="text-center">
+            <a href="{{ url_for('admin.pvs', category=cat.name) }}" class="badge bg-primary text-decoration-none">
+              {{ cat.pv_monitors | length }}
+            </a>
+          </td>
+          <td class="text-center">
+            <a href="{{ url_for('admin.processes', category=cat.name) }}" class="badge bg-secondary text-decoration-none">
+              {{ cat.process_monitors | length }}
+            </a>
+          </td>
+          <td class="text-nowrap">
+            <a href="{{ url_for('admin.category_form', cat_id=cat.id) }}"
+               class="btn btn-sm btn-outline-primary py-0">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <form method="POST" action="{{ url_for('admin.category_delete', cat_id=cat.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('Delete category \'{{ cat.name }}\'? Monitors will become Uncategorized.')">
+              <button class="btn btn-sm btn-outline-danger py-0">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-4">
+            No categories yet. <a href="{{ url_for('admin.category_form') }}">Add one</a>.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -14,10 +14,25 @@
   </div>
 </div>
 
-<p class="text-muted small">
-  Monitor system processes by name or command-line substring.
-  Configure a <strong>Start Command</strong> and/or <strong>Stop Command</strong> per process to control it directly from this page.
-</p>
+<div class="row g-2 mb-3">
+  <div class="col-md-5">
+    <input type="text" id="proc-search" class="form-control form-control-sm"
+           placeholder="Search by name or match value…">
+  </div>
+  <div class="col-md-4">
+    <select id="cat-filter" class="form-select form-select-sm"
+            onchange="window.location=this.value">
+      <option value="{{ url_for('admin.processes') }}"
+        {{ 'selected' if not cat_filter }}>All categories</option>
+      <option value="{{ url_for('admin.processes', category='__none__') }}"
+        {{ 'selected' if cat_filter == '__none__' }}>— Uncategorized —</option>
+      {% for cat in categories %}
+      <option value="{{ url_for('admin.processes', category=cat.name) }}"
+        {{ 'selected' if cat_filter == cat.name }}>{{ cat.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
 
 <div class="card shadow-sm mb-4">
   <div class="table-responsive">
@@ -26,6 +41,7 @@
         <tr>
           <th>Status</th>
           <th>Name</th>
+          <th>Category</th>
           <th>Match</th>
           <th>PID</th>
           <th>Notify</th>
@@ -37,7 +53,8 @@
       </thead>
       <tbody>
         {% for pm in processes %}
-        <tr class="{{ 'table-danger' if pm.status == 'STOPPED' else '' }}">
+        <tr class="{{ 'table-danger' if pm.status == 'STOPPED' else '' }}"
+            data-search="{{ pm.name }} {{ pm.description or '' }} {{ pm.match_value }} {{ pm.category.name if pm.category else '' }}">
           <td>
             <span class="badge
               {{ 'bg-success' if pm.status == 'RUNNING' else
@@ -51,6 +68,13 @@
           <td>
             <strong>{{ pm.name }}</strong>
             {% if pm.description %}<br><small class="text-muted">{{ pm.description }}</small>{% endif %}
+          </td>
+          <td>
+            {% if pm.category %}
+              <span class="badge bg-info text-dark">{{ pm.category.name }}</span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
           </td>
           <td class="small text-muted">
             <span class="badge bg-secondary">{{ pm.match_type }}</span>
@@ -195,4 +219,15 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('proc-search').addEventListener('input', function () {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('tr[data-search]').forEach(row => {
+    row.style.display = !q || row.dataset.search.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+</script>
 {% endblock %}

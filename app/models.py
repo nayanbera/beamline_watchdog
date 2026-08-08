@@ -47,6 +47,14 @@ class EmailList(db.Model):
         return len(self.emails)
 
 
+class Category(db.Model):
+    __tablename__ = 'categories'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class PVMonitor(db.Model):
     __tablename__ = 'pv_monitors'
     id = db.Column(db.Integer, primary_key=True)
@@ -58,6 +66,8 @@ class PVMonitor(db.Model):
     condition_op = db.Column(db.String(20), nullable=False)
     condition_value = db.Column(db.Float, nullable=False)
     condition_value2 = db.Column(db.Float)           # used for in_range / out_range
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+    category = db.relationship('Category', backref='pv_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
     notify_on_disconnect = db.Column(db.Boolean, default=False)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
@@ -166,6 +176,8 @@ class ProcessMonitor(db.Model):
     #             'cmdline' — substring match on full command-line string
     match_type = db.Column(db.String(20), default='name')
     match_value = db.Column(db.String(500), nullable=False)   # string to search for
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+    category = db.relationship('Category', backref='process_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
     email_list = db.relationship('EmailList', backref='process_monitors',

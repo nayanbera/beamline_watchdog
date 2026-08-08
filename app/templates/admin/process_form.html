@@ -27,10 +27,22 @@
               {% endif %}
             </div>
 
-            <div class="col-12">
+            <div class="col-md-8">
               <label class="form-label fw-semibold">Description</label>
               <input type="text" name="description" class="form-control"
                 value="{{ pm.description or '' }}" placeholder="Optional description">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="category_id" class="form-select">
+                <option value="">— Uncategorized —</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {{ 'selected' if pm.category_id == cat.id }}>
+                  {{ cat.name }}
+                </option>
+                {% endfor %}
+              </select>
             </div>
 
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Process Matching</h6></div>

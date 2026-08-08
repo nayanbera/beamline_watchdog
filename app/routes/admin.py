@@ -9,7 +9,7 @@ from werkzeug.security import check_password_hash
 
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
-                      ProcessMonitor, NotificationLog, SystemConfig, ActionLog)
+                      ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -79,11 +79,72 @@ def index():
 # PV monitors
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Categories
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/categories')
+@login_required
+def categories():
+    items = Category.query.order_by(Category.name).all()
+    return render_template('admin/categories.html', categories=items)
+
+
+@admin_bp.route('/categories/add', methods=['GET', 'POST'])
+@admin_bp.route('/categories/<int:cat_id>/edit', methods=['GET', 'POST'])
+@login_required
+def category_form(cat_id=None):
+    cat = Category.query.get_or_404(cat_id) if cat_id else Category()
+    errors = {}
+    if request.method == 'POST':
+        cat.name = request.form.get('name', '').strip()
+        cat.description = request.form.get('description', '').strip() or None
+        if not cat.name:
+            errors['name'] = 'Category name is required.'
+        existing = Category.query.filter_by(name=cat.name).first()
+        if existing and existing.id != cat_id:
+            errors['name'] = 'A category with this name already exists.'
+        if not errors:
+            if not cat_id:
+                db.session.add(cat)
+            db.session.commit()
+            flash(f'Category "{cat.name}" {"updated" if cat_id else "created"}.', 'success')
+            return redirect(url_for('admin.categories'))
+    return render_template('admin/category_form.html', cat=cat, cat_id=cat_id, errors=errors)
+
+
+@admin_bp.route('/categories/<int:cat_id>/delete', methods=['POST'])
+@login_required
+def category_delete(cat_id):
+    cat = Category.query.get_or_404(cat_id)
+    # Unlink PVs and processes before deleting
+    for pv in cat.pv_monitors:
+        pv.category_id = None
+    for pm in cat.process_monitors:
+        pm.category_id = None
+    db.session.delete(cat)
+    db.session.commit()
+    flash(f'Category "{cat.name}" deleted. Monitors moved to Uncategorized.', 'warning')
+    return redirect(url_for('admin.categories'))
+
+
+# ---------------------------------------------------------------------------
+# PV monitors
+# ---------------------------------------------------------------------------
+
 @admin_bp.route('/pvs')
 @login_required
 def pvs():
-    items = PVMonitor.query.order_by(PVMonitor.pv_name).all()
-    return render_template('admin/pvs.html', pvs=items)
+    cat_filter = request.args.get('category', '')
+    categories = Category.query.order_by(Category.name).all()
+    q = PVMonitor.query.order_by(PVMonitor.pv_name)
+    if cat_filter == '__none__':
+        q = q.filter(PVMonitor.category_id == None)
+    elif cat_filter:
+        q = q.join(Category).filter(Category.name == cat_filter)
+    items = q.all()
+    return render_template('admin/pvs.html', pvs=items,
+                           categories=categories, cat_filter=cat_filter)
 
 
 @admin_bp.route('/pvs/add', methods=['GET', 'POST'])
@@ -92,6 +153,7 @@ def pvs():
 def pv_form(pv_id=None):
     pv = PVMonitor.query.get_or_404(pv_id) if pv_id else PVMonitor()
     email_lists = EmailList.query.order_by(EmailList.name).all()
+    categories = Category.query.order_by(Category.name).all()
     errors = {}
 
     if request.method == 'POST':
@@ -102,6 +164,8 @@ def pv_form(pv_id=None):
         pv.enabled = 'enabled' in request.form
         pv.notify_flag = 'notify_flag' in request.form
         pv.notify_on_disconnect = 'notify_on_disconnect' in request.form
+        cat_id = request.form.get('category_id', '')
+        pv.category_id = int(cat_id) if cat_id else None
 
         try:
             pv.condition_value = float(request.form.get('condition_value', ''))
@@ -142,8 +206,8 @@ def pv_form(pv_id=None):
             return redirect(url_for('admin.pvs'))
 
     return render_template('admin/pv_form.html', pv=pv, pv_id=pv_id,
-                           email_lists=email_lists, condition_ops=CONDITION_OPS,
-                           errors=errors)
+                           email_lists=email_lists, categories=categories,
+                           condition_ops=CONDITION_OPS, errors=errors)
 
 
 @admin_bp.route('/pvs/<int:pv_id>/delete', methods=['POST'])
@@ -505,12 +569,20 @@ MATCH_TYPES = [
 @admin_bp.route('/processes')
 @login_required
 def processes():
-    items = ProcessMonitor.query.order_by(ProcessMonitor.name).all()
+    cat_filter = request.args.get('category', '')
+    categories = Category.query.order_by(Category.name).all()
+    q = ProcessMonitor.query.order_by(ProcessMonitor.name)
+    if cat_filter == '__none__':
+        q = q.filter(ProcessMonitor.category_id == None)
+    elif cat_filter:
+        q = q.join(Category).filter(Category.name == cat_filter)
+    items = q.all()
     recent_actions = (ActionLog.query
                       .order_by(ActionLog.timestamp.desc())
                       .limit(10).all())
     return render_template('admin/processes.html',
-                           processes=items, recent_actions=recent_actions)
+                           processes=items, recent_actions=recent_actions,
+                           categories=categories, cat_filter=cat_filter)
 
 
 @admin_bp.route('/processes/add', methods=['GET', 'POST'])
@@ -519,6 +591,7 @@ def processes():
 def process_form(proc_id=None):
     pm = ProcessMonitor.query.get_or_404(proc_id) if proc_id else ProcessMonitor()
     email_lists = EmailList.query.order_by(EmailList.name).all()
+    categories = Category.query.order_by(Category.name).all()
     errors = {}
 
     if request.method == 'POST':
@@ -531,6 +604,8 @@ def process_form(proc_id=None):
         pm.working_dir = request.form.get('working_dir', '').strip() or None
         pm.notify_flag = 'notify_flag' in request.form
         pm.enabled = 'enabled' in request.form
+        cat_id = request.form.get('category_id', '')
+        pm.category_id = int(cat_id) if cat_id else None
 
         ni = request.form.get('notify_interval', '3600').strip()
         try:
@@ -554,7 +629,8 @@ def process_form(proc_id=None):
             return redirect(url_for('admin.processes'))
 
     return render_template('admin/process_form.html', pm=pm, proc_id=proc_id,
-                           email_lists=email_lists, match_types=MATCH_TYPES, errors=errors)
+                           email_lists=email_lists, categories=categories,
+                           match_types=MATCH_TYPES, errors=errors)
 
 
 @admin_bp.route('/processes/<int:proc_id>/delete', methods=['POST'])

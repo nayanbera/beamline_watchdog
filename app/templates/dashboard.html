@@ -54,169 +54,214 @@
   </div>
 </div>
 
-<!-- PV Table -->
+<!-- PV search -->
+<div class="mb-3">
+  <input type="text" id="pv-search" class="form-control"
+         placeholder="Search PVs by name, alias, or category…">
+</div>
+
+<!-- PV groups by category -->
+{% if pv_groups %}
+  {% for cat_name, cat_pvs in pv_groups %}
+  {% set grp_id = 'pvgrp-' ~ loop.index %}
+  {% set alarm_in_group = cat_pvs | selectattr('status', 'eq', 'ALARM') | selectattr('enabled') | list | length %}
+  {% set disc_in_group  = cat_pvs | selectattr('status', 'in', ['DISCONNECTED','ERROR']) | selectattr('enabled') | list | length %}
+  <div class="card shadow-sm mb-3 pv-group" data-cat="{{ cat_name }}">
+    <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between"
+         style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
+         aria-expanded="true">
+      <span>
+        <i class="bi bi-folder2-open me-1"></i>
+        <strong>{{ cat_name }}</strong>
+        <span class="badge bg-secondary ms-2">{{ cat_pvs | length }}</span>
+        {% if alarm_in_group %}
+          <span class="badge bg-danger ms-1">{{ alarm_in_group }} ALARM</span>
+        {% endif %}
+        {% if disc_in_group %}
+          <span class="badge bg-warning text-dark ms-1">{{ disc_in_group }} DISCONNECTED</span>
+        {% endif %}
+      </span>
+      <i class="bi bi-chevron-down collapse-icon"></i>
+    </div>
+    <div id="{{ grp_id }}" class="collapse show">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th style="width:100px">Status</th>
+              <th>PV Name</th>
+              <th>Alias</th>
+              <th>Current Value</th>
+              <th>Alarm Condition</th>
+              <th>Last Checked</th>
+              <th>Last Alarm</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for pv in cat_pvs %}
+            <tr id="pv-row-{{ pv.id }}"
+                data-search="{{ pv.pv_name }} {{ pv.alias or '' }} {{ cat_name }}"
+                class="{{ 'table-danger' if pv.status == 'ALARM' and pv.enabled else ('table-warning' if pv.status in ['DISCONNECTED','ERROR'] and pv.enabled else ('text-muted' if not pv.enabled else '')) }}">
+              <td>
+                {% if not pv.enabled %}
+                  <span class="badge bg-secondary" id="pv-badge-{{ pv.id }}">DISABLED</span>
+                {% else %}
+                  <span class="badge {{ status_badge(pv.status) }}" id="pv-badge-{{ pv.id }}">
+                    {{ pv.status }}
+                  </span>
+                {% endif %}
+              </td>
+              <td><code class="small">{{ pv.pv_name }}</code></td>
+              <td class="text-muted">{{ pv.alias or '' }}</td>
+              <td id="pv-val-{{ pv.id }}">
+                {% if pv.current_value_str %}
+                  {{ pv.current_value_str }}
+                {% elif pv.current_value is not none %}
+                  {{ '%.6g' | format(pv.current_value) }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="small text-muted">{{ pv.condition_str }}</td>
+              <td class="small" id="pv-checked-{{ pv.id }}">
+                {{ localdt(pv.last_checked, '%H:%M:%S %Z') }}
+              </td>
+              <td class="small" id="pv-alarm-{{ pv.id }}">
+                {% if pv.last_alarm %}
+                  <span class="text-danger">{{ localdt(pv.last_alarm, '%Y-%m-%d %H:%M') }}</span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
 <div class="card shadow-sm mb-4">
-  <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
-    <span><i class="bi bi-list-check"></i> PV Monitor Status</span>
-    <a href="{{ url_for('admin.pvs') }}" class="btn btn-sm btn-outline-light">
-      <i class="bi bi-gear"></i> Manage
-    </a>
+  <div class="card-body text-center text-muted py-4">
+    No PVs configured.
+    {% if not current_user.is_authenticated %}
+      <a href="{{ url_for('admin.login') }}">Log in</a> to add PVs.
+    {% else %}
+      <a href="{{ url_for('admin.pv_form') }}">Add a PV</a>.
+    {% endif %}
   </div>
-  <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
-      <thead class="table-secondary">
-        <tr>
-          <th style="width:100px">Status</th>
-          <th>PV Name</th>
-          <th>Alias</th>
-          <th>Current Value</th>
-          <th>Alarm Condition</th>
-          <th>Last Checked</th>
-          <th>Last Alarm</th>
-        </tr>
-      </thead>
-      <tbody id="pv-tbody">
-        {% for pv in pvs %}
-        <tr id="pv-row-{{ pv.id }}" class="{{ 'table-danger' if pv.status == 'ALARM' and pv.enabled else ('table-warning' if pv.status in ['DISCONNECTED','ERROR'] and pv.enabled else ('text-muted' if not pv.enabled else '')) }}">
-          <td>
-            {% if not pv.enabled %}
-              <span class="badge bg-secondary" id="pv-badge-{{ pv.id }}">DISABLED</span>
-            {% else %}
-              <span class="badge {{ status_badge(pv.status) }}" id="pv-badge-{{ pv.id }}">
-                {{ pv.status }}
-              </span>
-            {% endif %}
-          </td>
-          <td><code class="small">{{ pv.pv_name }}</code></td>
-          <td class="text-muted">{{ pv.alias or '' }}</td>
-          <td id="pv-val-{{ pv.id }}">
-            {% if pv.current_value_str %}
-              {{ pv.current_value_str }}
-            {% elif pv.current_value is not none %}
-              {{ '%.6g' | format(pv.current_value) }}
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          <td class="small text-muted">{{ pv.condition_str }}</td>
-          <td class="small" id="pv-checked-{{ pv.id }}">
-            {{ localdt(pv.last_checked, '%H:%M:%S %Z') }}
-          </td>
-          <td class="small" id="pv-alarm-{{ pv.id }}">
-            {% if pv.last_alarm %}
-              <span class="text-danger">{{ localdt(pv.last_alarm, '%Y-%m-%d %H:%M') }}</span>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="7" class="text-center text-muted py-4">
-            No PVs configured.
-            {% if not current_user.is_authenticated %}
-              <a href="{{ url_for('admin.login') }}">Log in</a> to add PVs.
-            {% else %}
-              <a href="{{ url_for('admin.pv_form') }}">Add a PV</a>.
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+</div>
+{% endif %}
+
+<div id="pv-no-results" class="text-center text-muted py-2 mb-3" style="display:none">
+  No PVs match your search.
 </div>
 
 <!-- Process Monitors -->
-{% if processes or disabled_count %}
-<div class="card shadow-sm mb-4">
-  <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between">
-    <span><i class="bi bi-cpu"></i> Process Monitor Status</span>
-    <a href="{{ url_for('admin.processes') }}" class="btn btn-sm btn-outline-light">
-      <i class="bi bi-gear"></i> Manage
-    </a>
+{% if proc_groups %}
+<h5 class="mt-2 mb-2"><i class="bi bi-cpu"></i> Process Monitor Status
+  <a href="{{ url_for('admin.processes') }}" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-gear"></i> Manage
+  </a>
+</h5>
+  {% for cat_name, cat_procs in proc_groups %}
+  {% set grp_id = 'procgrp-' ~ loop.index %}
+  {% set stopped_in_group = cat_procs | selectattr('status', 'eq', 'STOPPED') | selectattr('enabled') | list | length %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between"
+         style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
+         aria-expanded="true">
+      <span>
+        <i class="bi bi-folder2-open me-1"></i>
+        <strong>{{ cat_name }}</strong>
+        <span class="badge bg-secondary ms-2">{{ cat_procs | length }}</span>
+        {% if stopped_in_group %}
+          <span class="badge bg-danger ms-1">{{ stopped_in_group }} STOPPED</span>
+        {% endif %}
+      </span>
+      <i class="bi bi-chevron-down collapse-icon"></i>
+    </div>
+    <div id="{{ grp_id }}" class="collapse show">
+      <div class="table-responsive">
+        <table class="table table-hover table-sm align-middle mb-0">
+          <thead class="table-secondary">
+            <tr>
+              <th style="width:110px">Status</th>
+              <th>Process Name</th>
+              <th>Match</th>
+              <th>PID</th>
+              <th>Last Checked</th>
+              <th>Last Stopped</th>
+              {% if current_user.is_authenticated %}<th>Control</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody id="proc-tbody-{{ loop.index }}">
+            {% for pm in cat_procs %}
+            <tr id="proc-row-{{ pm.id }}" class="{{ 'table-danger' if pm.status == 'STOPPED' and pm.enabled else ('text-muted' if not pm.enabled else '') }}">
+              <td>
+                {% if not pm.enabled %}
+                  <span class="badge bg-secondary" id="proc-badge-{{ pm.id }}">DISABLED</span>
+                {% else %}
+                  <span class="badge {{ 'bg-success' if pm.status == 'RUNNING' else ('bg-danger' if pm.status == 'STOPPED' else 'bg-secondary') }}"
+                        id="proc-badge-{{ pm.id }}">
+                    {{ pm.status }}
+                  </span>
+                {% endif %}
+              </td>
+              <td><strong>{{ pm.name }}</strong>
+                {% if pm.description %}<br><small class="text-muted">{{ pm.description }}</small>{% endif %}
+              </td>
+              <td class="small text-muted">
+                <span class="badge bg-light text-dark">{{ pm.match_type }}</span>
+                <code class="ms-1">{{ pm.match_value }}</code>
+              </td>
+              <td class="small" id="proc-pid-{{ pm.id }}">{{ pm.pid if pm.pid else '—' }}</td>
+              <td class="small" id="proc-checked-{{ pm.id }}">
+                {{ localdt(pm.last_checked, '%H:%M:%S %Z') }}
+              </td>
+              <td class="small" id="proc-stopped-{{ pm.id }}">
+                {% if pm.last_stopped %}
+                  <span class="text-danger">{{ localdt(pm.last_stopped, '%Y-%m-%d %H:%M') }}</span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              {% if current_user.is_authenticated %}
+              <td class="text-nowrap">
+                {% if pm.start_command %}
+                <form method="POST" action="{{ url_for('admin.process_start', proc_id=pm.id) }}"
+                      class="d-inline" onsubmit="return confirm('Start {{ pm.name }}?')">
+                  <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
+                  <button class="btn btn-sm btn-outline-success py-0"
+                          {{ 'disabled' if pm.status == 'RUNNING' }}>
+                    <i class="bi bi-play-fill"></i>
+                  </button>
+                </form>
+                {% endif %}
+                {% if pm.stop_command or pm.pid %}
+                <form method="POST" action="{{ url_for('admin.process_stop', proc_id=pm.id) }}"
+                      class="d-inline" onsubmit="return confirm('Stop {{ pm.name }}?')">
+                  <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
+                  <button class="btn btn-sm btn-outline-warning py-0"
+                          {{ 'disabled' if pm.status != 'RUNNING' }}>
+                    <i class="bi bi-stop-fill"></i>
+                  </button>
+                </form>
+                {% endif %}
+                {% if not pm.start_command and not pm.stop_command and not pm.pid %}
+                  <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
-      <thead class="table-secondary">
-        <tr>
-          <th style="width:110px">Status</th>
-          <th>Process Name</th>
-          <th>Match</th>
-          <th>PID</th>
-          <th>Last Checked</th>
-          <th>Last Stopped</th>
-          {% if current_user.is_authenticated %}<th>Control</th>{% endif %}
-        </tr>
-      </thead>
-      <tbody id="proc-tbody">
-        {% for pm in processes %}
-        <tr id="proc-row-{{ pm.id }}" class="{{ 'table-danger' if pm.status == 'STOPPED' and pm.enabled else ('text-muted' if not pm.enabled else '') }}">
-          <td>
-            {% if not pm.enabled %}
-              <span class="badge bg-secondary" id="proc-badge-{{ pm.id }}">DISABLED</span>
-            {% else %}
-              <span class="badge {{ 'bg-success' if pm.status == 'RUNNING' else ('bg-danger' if pm.status == 'STOPPED' else 'bg-secondary') }}"
-                    id="proc-badge-{{ pm.id }}">
-                {{ pm.status }}
-              </span>
-            {% endif %}
-          </td>
-          <td><strong>{{ pm.name }}</strong>
-            {% if pm.description %}<br><small class="text-muted">{{ pm.description }}</small>{% endif %}
-          </td>
-          <td class="small text-muted">
-            <span class="badge bg-light text-dark">{{ pm.match_type }}</span>
-            <code class="ms-1">{{ pm.match_value }}</code>
-          </td>
-          <td class="small" id="proc-pid-{{ pm.id }}">
-            {{ pm.pid if pm.pid else '—' }}
-          </td>
-          <td class="small" id="proc-checked-{{ pm.id }}">
-            {{ localdt(pm.last_checked, '%H:%M:%S %Z') }}
-          </td>
-          <td class="small" id="proc-stopped-{{ pm.id }}">
-            {% if pm.last_stopped %}
-              <span class="text-danger">{{ localdt(pm.last_stopped, '%Y-%m-%d %H:%M') }}</span>
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </td>
-          {% if current_user.is_authenticated %}
-          <td class="text-nowrap">
-            {% if pm.start_command %}
-            <form method="POST" action="{{ url_for('admin.process_start', proc_id=pm.id) }}"
-                  class="d-inline"
-                  onsubmit="return confirm('Start {{ pm.name }}?')">
-              <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
-              <button class="btn btn-sm btn-outline-success py-0"
-                      {{ 'disabled' if pm.status == 'RUNNING' }}>
-                <i class="bi bi-play-fill"></i>
-              </button>
-            </form>
-            {% endif %}
-            {% if pm.stop_command or pm.pid %}
-            <form method="POST" action="{{ url_for('admin.process_stop', proc_id=pm.id) }}"
-                  class="d-inline"
-                  onsubmit="return confirm('Stop {{ pm.name }}?')">
-              <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
-              <button class="btn btn-sm btn-outline-warning py-0"
-                      {{ 'disabled' if pm.status != 'RUNNING' }}>
-                <i class="bi bi-stop-fill"></i>
-              </button>
-            </form>
-            {% endif %}
-            {% if not pm.start_command and not pm.stop_command and not pm.pid %}
-              <span class="text-muted small">—</span>
-            {% endif %}
-          </td>
-          {% endif %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+  {% endfor %}
 {% endif %}
 
 <!-- Compound Rules -->
@@ -360,5 +405,36 @@ async function refresh() {
 }
 
 setTimeout(refresh, REFRESH_MS);
+
+// PV search — filters rows across all category groups
+document.getElementById('pv-search').addEventListener('input', function () {
+  const q = this.value.toLowerCase();
+  let totalShown = 0;
+  document.querySelectorAll('.pv-group').forEach(group => {
+    let groupShown = 0;
+    group.querySelectorAll('tr[data-search]').forEach(row => {
+      const match = !q || row.dataset.search.toLowerCase().includes(q);
+      row.style.display = match ? '' : 'none';
+      if (match) groupShown++;
+    });
+    totalShown += groupShown;
+    // Show group and auto-expand if it has matches (or search is cleared)
+    group.style.display = groupShown === 0 && q ? 'none' : '';
+    if (q && groupShown > 0) {
+      const collapse = group.querySelector('.collapse');
+      if (collapse) collapse.classList.add('show');
+    }
+  });
+  const noRes = document.getElementById('pv-no-results');
+  if (noRes) noRes.style.display = totalShown === 0 && q ? '' : 'none';
+});
+
+// Rotate chevron on collapse toggle
+document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(header => {
+  const target = document.querySelector(header.dataset.bsTarget);
+  if (!target) return;
+  target.addEventListener('show.bs.collapse',  () => header.querySelector('.collapse-icon')?.classList.replace('bi-chevron-up',   'bi-chevron-down'));
+  target.addEventListener('hide.bs.collapse',  () => header.querySelector('.collapse-icon')?.classList.replace('bi-chevron-down', 'bi-chevron-up'));
+});
 </script>
 {% endblock %}

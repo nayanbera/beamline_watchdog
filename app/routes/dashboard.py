@@ -1,4 +1,5 @@
-from datetime import datetime, timezone as dt_timezone
+from collections import defaultdict
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
 from ..models import PVMonitor, CompoundRule, ProcessMonitor
@@ -22,6 +23,19 @@ def _fmt(dt, tz, fmt='%Y-%m-%d %H:%M:%S'):
     return dt.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime(fmt)
 
 
+def _group_by_category(items):
+    """Return list of (category_name, items) sorted alphabetically, Uncategorized last."""
+    groups = defaultdict(list)
+    for item in items:
+        key = item.category.name if item.category else 'Uncategorized'
+        groups[key].append(item)
+    result = sorted([(k, v) for k, v in groups.items() if k != 'Uncategorized'],
+                    key=lambda x: x[0].lower())
+    if 'Uncategorized' in groups:
+        result.append(('Uncategorized', groups['Uncategorized']))
+    return result
+
+
 @dashboard_bp.route('/')
 def index():
     pvs = PVMonitor.query.order_by(PVMonitor.pv_name).all()
@@ -41,9 +55,9 @@ def index():
 
     return render_template(
         'dashboard.html',
-        pvs=pvs,
+        pv_groups=_group_by_category(pvs),
+        proc_groups=_group_by_category(processes),
         rules=rules,
-        processes=processes,
         ok_count=ok_count,
         alarm_count=alarm_count,
         disconnected_count=disc_count,
@@ -67,6 +81,7 @@ def api_status():
             'id': p.id,
             'pv_name': p.pv_name,
             'alias': p.alias or '',
+            'category': p.category.name if p.category else '',
             'current_value': p.current_value_str or ('N/A' if p.current_value is None else str(p.current_value)),
             'status': p.status,
             'enabled': p.enabled,
@@ -91,6 +106,7 @@ def api_status():
             'id': pm.id,
             'name': pm.name,
             'match_value': pm.match_value,
+            'category': pm.category.name if pm.category else '',
             'status': pm.status,
             'enabled': pm.enabled,
             'pid': pm.pid,

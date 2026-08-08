@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if cat_id else 'Add' }} Category — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-folder2-open"></i>
+          {{ 'Edit Category: ' + cat.name if cat_id else 'Add Category' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control {{ 'is-invalid' if errors.get('name') }}"
+              value="{{ cat.name or '' }}" placeholder="e.g. Beam Line, Vacuum, RF Systems" autofocus required>
+            {% if errors.get('name') %}
+              <div class="invalid-feedback">{{ errors.name }}</div>
+            {% endif %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Description</label>
+            <input type="text" name="description" class="form-control"
+              value="{{ cat.description or '' }}" placeholder="Optional description">
+          </div>
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if cat_id else 'Add Category' }}
+            </button>
+            <a href="{{ url_for('admin.categories') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

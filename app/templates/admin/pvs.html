@@ -9,14 +9,35 @@
   </a>
 </div>
 
+<div class="row g-2 mb-3">
+  <div class="col-md-5">
+    <input type="text" id="pv-search" class="form-control form-control-sm"
+           placeholder="Search by PV name or alias…">
+  </div>
+  <div class="col-md-4">
+    <select id="cat-filter" class="form-select form-select-sm"
+            onchange="window.location=this.value">
+      <option value="{{ url_for('admin.pvs') }}"
+        {{ 'selected' if not cat_filter }}>All categories</option>
+      <option value="{{ url_for('admin.pvs', category='__none__') }}"
+        {{ 'selected' if cat_filter == '__none__' }}>— Uncategorized —</option>
+      {% for cat in categories %}
+      <option value="{{ url_for('admin.pvs', category=cat.name) }}"
+        {{ 'selected' if cat_filter == cat.name }}>{{ cat.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <table class="table table-hover table-sm align-middle mb-0" id="pv-table">
       <thead class="table-dark">
         <tr>
           <th>Status</th>
           <th>PV Name</th>
           <th>Alias</th>
+          <th>Category</th>
           <th>Alarm Condition</th>
           <th>Current Value</th>
           <th>Notify</th>
@@ -26,13 +47,21 @@
       </thead>
       <tbody>
         {% for pv in pvs %}
-        <tr class="{{ '' if pv.enabled else 'text-muted' }}">
+        <tr class="{{ '' if pv.enabled else 'text-muted' }}"
+            data-search="{{ pv.pv_name }} {{ pv.alias or '' }} {{ pv.category.name if pv.category else '' }}">
           <td>
             <span class="badge {{ status_badge(pv.status) }}">{{ pv.status }}</span>
             {% if not pv.enabled %}<span class="badge bg-light text-dark">DISABLED</span>{% endif %}
           </td>
           <td><code class="small">{{ pv.pv_name }}</code></td>
           <td>{{ pv.alias or '—' }}</td>
+          <td>
+            {% if pv.category %}
+              <span class="badge bg-info text-dark">{{ pv.category.name }}</span>
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
           <td class="small">{{ pv.condition_str }}</td>
           <td class="small">
             {% if pv.current_value_str %}{{ pv.current_value_str }}
@@ -67,8 +96,8 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="8" class="text-center text-muted py-4">
-            No PVs configured. <a href="{{ url_for('admin.pv_form') }}">Add one</a>.
+          <td colspan="9" class="text-center text-muted py-4">
+            No PVs found. <a href="{{ url_for('admin.pv_form') }}">Add one</a>.
           </td>
         </tr>
         {% endfor %}
@@ -76,4 +105,22 @@
     </table>
   </div>
 </div>
+<div id="no-results" class="text-center text-muted py-3" style="display:none">
+  No PVs match your search.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('pv-search').addEventListener('input', function () {
+  const q = this.value.toLowerCase();
+  let shown = 0;
+  document.querySelectorAll('#pv-table tbody tr[data-search]').forEach(row => {
+    const match = !q || row.dataset.search.toLowerCase().includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) shown++;
+  });
+  document.getElementById('no-results').style.display = shown === 0 && q ? '' : 'none';
+});
+</script>
 {% endblock %}
