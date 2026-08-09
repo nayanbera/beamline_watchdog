@@ -326,6 +326,7 @@
 <!-- Chart.js + date-fns adapter for PV history plots -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>const AA_BASE_URL = {{ archiver_url | tojson }};</script>
 
 <!-- PV History Plot Modal -->
 <div class="modal fade" id="plotModal" tabindex="-1" aria-labelledby="plotModalLabel">
@@ -337,7 +338,14 @@
           <span id="plot-display-name"></span>
           <code class="ms-2 small text-muted" id="plot-pv-name-code"></code>
         </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="d-flex align-items-center gap-2">
+          <a id="btn-open-aa" href="#" target="_blank" rel="noopener"
+             class="btn btn-sm btn-outline-info"
+             title="Open in Archiver Appliance viewer (new tab)">
+            <i class="bi bi-box-arrow-up-right"></i> Open in AA Viewer
+          </a>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
       </div>
       <div class="modal-body">
         <!-- Time range controls -->
@@ -350,9 +358,9 @@
             <button class="btn btn-outline-secondary" onclick="setRange(168)">7 d</button>
           </div>
           <span class="text-muted small">or custom:</span>
-          <input type="datetime-local" id="from-dt" class="form-control form-control-sm" style="width:195px">
+          <input type="datetime-local" id="from-dt" class="form-control form-control-sm" style="width:195px" onchange="updateAAViewerLink()">
           <span class="text-muted">→</span>
-          <input type="datetime-local" id="to-dt" class="form-control form-control-sm" style="width:195px">
+          <input type="datetime-local" id="to-dt" class="form-control form-control-sm" style="width:195px" onchange="updateAAViewerLink()">
           <button class="btn btn-sm btn-primary" onclick="fetchAndPlot()">
             <i class="bi bi-arrow-clockwise"></i> Fetch
           </button>
@@ -535,6 +543,18 @@ let lastLabels = [];
 let lastValues = [];
 let lastUnits  = '';
 
+function updateAAViewerLink() {
+  const fromVal = document.getElementById('from-dt').value;
+  const toVal   = document.getElementById('to-dt').value;
+  if (!currentPV || !AA_BASE_URL) return;
+  const base = AA_BASE_URL.replace(/\/$/, '');
+  const params = new URLSearchParams({ pv: currentPV });
+  if (fromVal) params.set('from', new Date(fromVal).toISOString());
+  if (toVal)   params.set('to',   new Date(toVal).toISOString());
+  document.getElementById('btn-open-aa').href =
+    `${base}/viewer/index.html?${params.toString()}`;
+}
+
 function openPlot(pvName, displayName) {
   currentPV = pvName;
   document.getElementById('plot-pv-name-code').textContent  = pvName;
@@ -562,6 +582,7 @@ function setRange(hours, doFetch = true) {
   document.querySelectorAll('#plotModal .btn-group .btn').forEach((b, i) => {
     b.classList.toggle('active', PRESET_HOURS[i] === hours);
   });
+  updateAAViewerLink();
   if (doFetch) fetchAndPlot();
 }
 

@@ -62,7 +62,8 @@ def index():
 
     from ..models import SystemConfig
     aa_row = SystemConfig.query.filter_by(key='archiver_url').first()
-    archiver_configured = bool(aa_row and aa_row.value and aa_row.value.strip())
+    aa_url = (aa_row.value or '').strip() if aa_row else ''
+    archiver_configured = bool(aa_url)
 
     return render_template(
         'dashboard.html',
@@ -76,6 +77,7 @@ def index():
         disabled_count=disabled_count,
         last_updated=now_local,
         archiver_configured=archiver_configured,
+        archiver_url=aa_url,
     )
 
 
