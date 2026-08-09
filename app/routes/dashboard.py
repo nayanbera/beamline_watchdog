@@ -1,12 +1,8 @@
-import json as _json
 import logging
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify
 from ..models import PVMonitor, CompoundRule, ProcessMonitor
 
 logger = logging.getLogger(__name__)
@@ -148,46 +144,3 @@ def api_status():
     })
 
 
-@dashboard_bp.route('/api/pv-history')
-def pv_history():
-    """Proxy to Archiver Appliance getData.json — avoids browser CORS issues."""
-    from ..models import SystemConfig
-
-    pv_name = request.args.get('pv', '').strip()
-    from_time = request.args.get('from', '').strip()
-    to_time = request.args.get('to', '').strip()
-    count = request.args.get('count', '').strip()
-
-    if not pv_name:
-        return jsonify({'error': 'pv parameter required'}), 400
-
-    # Only serve data for PVs that are actually monitored
-    if not PVMonitor.query.filter_by(pv_name=pv_name).first():
-        return jsonify({'error': 'PV not in monitor list'}), 404
-
-    row = SystemConfig.query.filter_by(key='archiver_url').first()
-    aa_url = (row.value or '').strip() if row else ''
-    if not aa_url:
-        return jsonify({'error': 'Archiver Appliance URL not configured — go to Admin → Settings'}), 503
-
-    # The AA operator is embedded in the PV name: optimized_N(pvname) returns ~N points.
-    # Clamp to 10000 to prevent dumping the full raw archive in one request.
-    if count and count.isdigit() and int(count) >= 10:
-        pv_arg = f'optimized_{min(int(count), 10000)}({pv_name})'
-    else:
-        pv_arg = pv_name
-    aa_params = {'pv': pv_arg, 'from': from_time, 'to': to_time, 'fetchLatestMetadata': 'true'}
-    url = f"{aa_url.rstrip('/')}/retrieval/data/getData.json?{urllib.parse.urlencode(aa_params)}"
-
-    try:
-        req = urllib.request.Request(url, headers={'Accept': 'application/json'})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = _json.loads(resp.read())
-        return jsonify(data)
-    except urllib.error.URLError as e:
-        reason = getattr(e, 'reason', str(e))
-        logger.warning('AA fetch failed for %s: %s', pv_name, reason)
-        return jsonify({'error': f'Could not reach Archiver Appliance: {reason}'}), 502
-    except Exception as e:
-        logger.exception('AA fetch error for %s', pv_name)
-        return jsonify({'error': str(e)}), 500
