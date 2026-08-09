@@ -23,11 +23,20 @@ def send_notification_email(recipients, subject, body, config):
     use_tls = config.get('mail_use_tls', 'false').lower() == 'true'
     use_ssl = config.get('mail_use_ssl', 'false').lower() == 'true'
 
+    site_url = (config.get('site_url') or '').strip()
+    full_body = body
+    if site_url:
+        full_body += f'\n\n---\nView dashboard: {site_url}\n'
+
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = sender
     msg['To'] = ', '.join(recipients)
-    msg.attach(MIMEText(body, 'plain'))
+    # Highest priority flags — honoured by most mail clients
+    msg['X-Priority'] = '1'
+    msg['X-MSMail-Priority'] = 'High'
+    msg['Importance'] = 'High'
+    msg.attach(MIMEText(full_body, 'plain'))
 
     try:
         if use_ssl:

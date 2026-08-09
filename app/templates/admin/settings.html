@@ -76,6 +76,13 @@
                 value="{{ cfg.get('site_name', 'EPICS PV Watchdog') }}">
             </div>
             <div class="col-md-6">
+              <label class="form-label">Dashboard URL</label>
+              <input type="text" name="site_url" class="form-control font-monospace"
+                value="{{ cfg.get('site_url', '') }}"
+                placeholder="http://beamline-host:5000">
+              <small class="text-muted">Appended to notification emails so recipients can click through.</small>
+            </div>
+            <div class="col-md-6">
               <label class="form-label">Display Timezone</label>
               <select name="timezone" class="form-select">
                 {% set cur_tz = cfg.get('timezone', 'UTC') %}
