@@ -444,9 +444,12 @@ def settings():
 
             # Reschedule watchdog if interval changed
             new_interval = int(request.form.get('check_interval', 10) or 10)
-            from ..watchdog import restart_watchdog
-            from flask import current_app
-            restart_watchdog(current_app._get_current_object(), new_interval)
+            try:
+                from ..watchdog import restart_watchdog
+                from flask import current_app
+                restart_watchdog(current_app._get_current_object(), new_interval)
+            except Exception:
+                logger.warning('Could not reschedule watchdog job; settings were still saved.')
 
             flash('Settings saved. EPICS CA settings take effect on the next watchdog tick.', 'success')
             return redirect(url_for('admin.settings'))

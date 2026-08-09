@@ -456,5 +456,8 @@ def restart_watchdog(app, new_interval):
     """Call from admin settings when check_interval changes."""
     global _scheduler
     if _scheduler and _scheduler.running:
-        _scheduler.reschedule_job('watchdog', trigger='interval', seconds=new_interval)
-        logger.info('Watchdog rescheduled to %ds', new_interval)
+        try:
+            _scheduler.reschedule_job('watchdog', trigger='interval', seconds=new_interval)
+            logger.info('Watchdog rescheduled to %ds', new_interval)
+        except Exception as exc:
+            logger.warning('reschedule_job failed (%s); watchdog keeps current interval', exc)
