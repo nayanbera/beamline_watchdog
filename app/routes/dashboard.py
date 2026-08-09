@@ -3,23 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
-from ..models import PVMonitor, CompoundRule, ProcessMonitor, Category
-
-# Distinct colors for category labels — chosen to avoid alarm red, warning yellow, OK green
-CATEGORY_PALETTE = [
-    '#1971c2',  # blue
-    '#6741d9',  # purple
-    '#c2255c',  # pink
-    '#0c8599',  # teal
-    '#ae3ec9',  # violet
-    '#5c7cfa',  # indigo
-    '#1098ad',  # cyan
-    '#a61e4d',  # dark rose
-    '#364fc7',  # cobalt
-    '#5f3dc4',  # dark indigo
-    '#087f5b',  # forest teal
-    '#9c36b5',  # deep magenta
-]
+from ..models import PVMonitor, CompoundRule, ProcessMonitor, get_category_colors
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +61,7 @@ def index():
     aa_url = (aa_row.value or '').strip() if aa_row else ''
     archiver_configured = bool(aa_url)
 
-    all_categories = Category.query.order_by(Category.name).all()
-    category_colors = {
-        cat.name: (cat.color or CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)])
-        for i, cat in enumerate(all_categories)
-    }
-    category_colors['Uncategorized'] = '#6c757d'
+    category_colors = get_category_colors()
 
     return render_template(
         'dashboard.html',

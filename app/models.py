@@ -4,6 +4,34 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from . import db
 
+# Palette for auto-assigning colors to categories that have no custom color set.
+# Chosen to avoid alarm red (#dc3545), warning yellow (#ffc107), and OK green (#198754).
+CATEGORY_PALETTE = [
+    '#1971c2',  # blue
+    '#6741d9',  # purple
+    '#c2255c',  # pink
+    '#0c8599',  # teal
+    '#ae3ec9',  # violet
+    '#5c7cfa',  # indigo
+    '#1098ad',  # cyan
+    '#a61e4d',  # dark rose
+    '#364fc7',  # cobalt
+    '#5f3dc4',  # dark indigo
+    '#087f5b',  # forest teal
+    '#9c36b5',  # deep magenta
+]
+
+
+def get_category_colors():
+    """Return {category_name: hex_color} for all categories plus 'Uncategorized'."""
+    cats = Category.query.order_by(Category.name).all()
+    colors = {
+        cat.name: (cat.color or CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)])
+        for i, cat in enumerate(cats)
+    }
+    colors['Uncategorized'] = '#6c757d'
+    return colors
+
 # SMS gateway domains keyed by carrier slug
 CARRIERS = {
     'att':       ('AT&T',               'txt.att.net'),

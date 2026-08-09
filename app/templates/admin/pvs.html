@@ -103,7 +103,8 @@
           <td>{{ pv.alias or '—' }}</td>
           <td>
             {% if pv.category %}
-              <span class="badge bg-info text-dark">{{ pv.category.name }}</span>
+              {% set col = category_colors.get(pv.category.name, '#6c757d') %}
+              <span class="badge" style="background-color:{{ col }}">{{ pv.category.name }}</span>
             {% else %}
               <span class="text-muted small">—</span>
             {% endif %}

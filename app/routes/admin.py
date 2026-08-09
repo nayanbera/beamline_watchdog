@@ -10,7 +10,7 @@ from werkzeug.security import check_password_hash
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
-                      Recipient, CARRIERS)
+                      Recipient, CARRIERS, get_category_colors)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -149,7 +149,8 @@ def pvs():
     items = q.all()
     return render_template('admin/pvs.html', pvs=items,
                            categories=categories, cat_filter=cat_filter,
-                           email_lists=email_lists)
+                           email_lists=email_lists,
+                           category_colors=get_category_colors())
 
 
 @admin_bp.route('/pvs/add', methods=['GET', 'POST'])
@@ -595,7 +596,8 @@ def processes():
     return render_template('admin/processes.html',
                            processes=items, recent_actions=recent_actions,
                            categories=categories, cat_filter=cat_filter,
-                           email_lists=email_lists)
+                           email_lists=email_lists,
+                           category_colors=get_category_colors())
 
 
 @admin_bp.route('/bulk', methods=['POST'])
