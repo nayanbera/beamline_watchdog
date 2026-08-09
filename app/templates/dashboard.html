@@ -54,6 +54,32 @@
   </div>
 </div>
 
+<!-- Active Issues — populated by JS on each refresh -->
+<div id="active-issues-card" class="card shadow-sm mb-3 border-0" style="display:none">
+  <div class="card-header text-white fw-bold d-flex align-items-center justify-content-between"
+       style="background:#b71c1c">
+    <span><i class="bi bi-exclamation-triangle-fill me-1"></i> Active Issues</span>
+    <span class="badge bg-light text-danger ms-2" id="issues-count">0</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-secondary">
+        <tr>
+          <th style="width:110px">Status</th>
+          <th>PV Name</th>
+          <th>Alias</th>
+          <th>Category</th>
+          <th>Value</th>
+          <th>Last Checked</th>
+          <th>Last Alarm</th>
+          {% if archiver_configured %}<th style="width:42px"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="issues-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- PV search -->
 <div class="mb-3">
   <input type="text" id="pv-search" class="form-control"
@@ -66,9 +92,10 @@
   {% set grp_id = 'pvgrp-' ~ loop.index %}
   {% set alarm_in_group = cat_pvs | selectattr('status', 'eq', 'ALARM') | selectattr('enabled') | list | length %}
   {% set disc_in_group  = cat_pvs | selectattr('status', 'in', ['DISCONNECTED','ERROR']) | selectattr('enabled') | list | length %}
+  {% set cat_color = category_colors.get(cat_name, '#6c757d') %}
   <div class="card shadow-sm mb-3 pv-group" data-cat="{{ cat_name }}">
-    <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between"
-         style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
+    <div class="card-header text-white d-flex align-items-center justify-content-between"
+         style="background-color:{{ cat_color }}; cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
          aria-expanded="true">
       <span>
         <i class="bi bi-folder2-open me-1"></i>
@@ -179,9 +206,10 @@
   {% for cat_name, cat_procs in proc_groups %}
   {% set grp_id = 'procgrp-' ~ loop.index %}
   {% set stopped_in_group = cat_procs | selectattr('status', 'eq', 'STOPPED') | selectattr('enabled') | list | length %}
+  {% set cat_color = category_colors.get(cat_name, '#6c757d') %}
   <div class="card shadow-sm mb-3">
-    <div class="card-header bg-dark text-white d-flex align-items-center justify-content-between"
-         style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
+    <div class="card-header text-white d-flex align-items-center justify-content-between"
+         style="background-color:{{ cat_color }}; cursor:pointer" data-bs-toggle="collapse" data-bs-target="#{{ grp_id }}"
          aria-expanded="true">
       <span>
         <i class="bi bi-folder2-open me-1"></i>
@@ -326,6 +354,42 @@
 
 <script>
 const REFRESH_MS = 5000;
+const CAT_COLORS = {{ category_colors | tojson }};
+const AA_URL = {{ archiver_url | tojson }};
+
+function updateActiveIssues(pvs) {
+  const BAD = new Set(['ALARM', 'DISCONNECTED', 'ERROR', 'UNKNOWN']);
+  const issues = (pvs || []).filter(p => p.enabled && BAD.has(p.status));
+  issues.sort((a, b) => {
+    const ord = {ALARM: 0, DISCONNECTED: 1, ERROR: 2, UNKNOWN: 3};
+    const oa = ord[a.status] ?? 4, ob = ord[b.status] ?? 4;
+    return oa !== ob ? oa - ob : a.pv_name.localeCompare(b.pv_name);
+  });
+  const card = document.getElementById('active-issues-card');
+  const tbody = document.getElementById('issues-tbody');
+  const countBadge = document.getElementById('issues-count');
+  if (!card || !tbody) return;
+  if (issues.length === 0) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  if (countBadge) countBadge.textContent = issues.length;
+  tbody.innerHTML = issues.map(p => {
+    const bdg = p.status === 'ALARM'
+      ? 'bg-danger'
+      : (p.status === 'DISCONNECTED' || p.status === 'ERROR' ? 'bg-warning text-dark' : 'bg-secondary');
+    const rowCls = p.status === 'ALARM' ? 'table-danger' : 'table-warning';
+    const col = CAT_COLORS[p.category] || '#6c757d';
+    const catHtml = p.category
+      ? `<span class="badge" style="background-color:${col}">${p.category}</span>`
+      : '<span class="text-muted small">—</span>';
+    const alarmHtml = (p.last_alarm && p.last_alarm !== 'Never')
+      ? `<span class="text-danger">${p.last_alarm}</span>`
+      : '<span class="text-muted">—</span>';
+    const aaCell = AA_URL
+      ? `<td><a href="${AA_URL}/retrieval/ui/viewer/archViewer.html?pv=${encodeURIComponent(p.pv_name)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info py-0 px-1" title="Archiver"><i class="bi bi-graph-up"></i></a></td>`
+      : '';
+    return `<tr class="${rowCls}"><td><span class="badge ${bdg}">${p.status}</span></td><td><code class="small">${p.pv_name}</code></td><td class="small text-muted">${p.alias || ''}</td><td>${catHtml}</td><td class="small">${p.current_value}</td><td class="small">${p.last_checked}</td><td class="small">${alarmHtml}</td>${aaCell}</tr>`;
+  }).join('');
+}
 
 function statusBadge(s) {
   const map = {
@@ -356,6 +420,8 @@ async function refresh() {
     document.getElementById('total-count').textContent    = d.total_count;
     document.getElementById('disabled-count').textContent = d.disabled_count;
     document.getElementById('last-updated').textContent   = d.last_updated;
+
+    updateActiveIssues(d.pvs);
 
     (d.pvs || []).forEach(p => {
       const row = document.getElementById(`pv-row-${p.id}`);
@@ -416,7 +482,7 @@ async function refresh() {
   }
 }
 
-setTimeout(refresh, REFRESH_MS);
+refresh();
 
 // PV search — filters rows across all category groups
 document.getElementById('pv-search').addEventListener('input', function () {
