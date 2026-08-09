@@ -48,8 +48,10 @@ def create_app():
 
     from .routes.dashboard import dashboard_bp
     from .routes.admin import admin_bp
+    from .routes.public import public_bp
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(public_bp)
 
     apply_epics_env(app)
 

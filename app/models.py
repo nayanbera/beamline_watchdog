@@ -4,6 +4,20 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from . import db
 
+# SMS gateway domains keyed by carrier slug
+CARRIERS = {
+    'att':       ('AT&T',               'txt.att.net'),
+    'verizon':   ('Verizon',            'vtext.com'),
+    'tmobile':   ('T-Mobile',           'tmomail.net'),
+    'sprint':    ('Sprint',             'messaging.sprintpcs.com'),
+    'boost':     ('Boost Mobile',       'sms.myboostmobile.com'),
+    'cricket':   ('Cricket Wireless',   'sms.cricketwireless.net'),
+    'metro':     ('Metro by T-Mobile',  'mymetropcs.com'),
+    'uscellular':('US Cellular',        'email.uscc.net'),
+    'visible':   ('Visible',            'vsblmessaging.com'),
+    'consumer':  ('Consumer Cellular',  'mailmymobile.net'),
+}
+
 
 class Admin(UserMixin, db.Model):
     __tablename__ = 'admins'
@@ -40,11 +54,57 @@ class EmailList(db.Model):
         self._emails = json.dumps(value if value else [])
 
     def get_emails(self):
-        return self.emails
+        """Return all addresses: static list + confirmed recipients (email + SMS gateway)."""
+        addrs = list(self.emails)
+        for r in self.recipients:
+            if r.confirmed:
+                if r.email not in addrs:
+                    addrs.append(r.email)
+                sms = r.sms_email
+                if sms and sms not in addrs:
+                    addrs.append(sms)
+        return addrs
 
     @property
     def email_count(self):
-        return len(self.emails)
+        confirmed = sum(1 for r in self.recipients if r.confirmed)
+        return len(self.emails) + confirmed
+
+
+class Recipient(db.Model):
+    __tablename__ = 'recipients'
+    id            = db.Column(db.Integer, primary_key=True)
+    name          = db.Column(db.String(150))
+    email         = db.Column(db.String(200), nullable=False)
+    phone         = db.Column(db.String(20))
+    carrier       = db.Column(db.String(50))
+    email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=False)
+    confirmed     = db.Column(db.Boolean, default=False)
+    token         = db.Column(db.String(64), unique=True, nullable=True)
+    token_expiry  = db.Column(db.DateTime, nullable=True)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_list = db.relationship('EmailList', backref='recipients',
+                                 foreign_keys=[email_list_id])
+
+    @property
+    def sms_email(self):
+        if self.phone and self.carrier:
+            info = CARRIERS.get(self.carrier)
+            if info:
+                digits = ''.join(c for c in self.phone if c.isdigit())
+                if digits:
+                    return f'{digits}@{info[1]}'
+        return None
+
+    @property
+    def carrier_name(self):
+        return CARRIERS.get(self.carrier, (self.carrier,))[0] if self.carrier else None
+
+    @property
+    def is_expired(self):
+        return bool(self.token_expiry and datetime.utcnow() > self.token_expiry)
 
 
 class Category(db.Model):

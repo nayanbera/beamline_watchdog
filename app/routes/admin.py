@@ -9,7 +9,8 @@ from werkzeug.security import check_password_hash
 
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
-                      ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category)
+                      ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
+                      Recipient, CARRIERS)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -841,3 +842,116 @@ def action_logs():
                   .paginate(page=page, per_page=50, error_out=False))
     return render_template('admin/action_logs.html',
                            logs=pagination.items, pagination=pagination)
+
+
+# ---------------------------------------------------------------------------
+# Recipients (self-registration via invitation)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/recipients')
+@login_required
+def recipients():
+    email_lists  = EmailList.query.order_by(EmailList.name).all()
+    all_recips   = (Recipient.query
+                   .order_by(Recipient.email_list_id, Recipient.email).all())
+    return render_template('admin/recipients.html',
+                           recipients=all_recips, email_lists=email_lists,
+                           carriers=CARRIERS)
+
+
+@admin_bp.route('/recipients/invite', methods=['POST'])
+@login_required
+def recipients_invite():
+    import re, secrets
+    from datetime import timedelta
+
+    list_id   = request.form.get('email_list_id', type=int)
+    emails_raw = request.form.get('emails', '')
+
+    if not list_id:
+        flash('Please select an email list.', 'warning')
+        return redirect(url_for('admin.recipients'))
+
+    EmailList.query.get_or_404(list_id)
+
+    addresses = list({e.strip().lower()
+                      for e in re.split(r'[,\n\r\s]+', emails_raw) if '@' in e})
+    if not addresses:
+        flash('No valid email addresses entered.', 'warning')
+        return redirect(url_for('admin.recipients'))
+
+    cfg       = {r.key: r.value for r in SystemConfig.query.all()}
+    site_url  = (cfg.get('site_url') or '').rstrip('/')
+    site_name = cfg.get('site_name') or 'EPICS PV Watchdog'
+
+    sent = skipped = 0
+    for addr in addresses:
+        existing = Recipient.query.filter_by(email=addr, email_list_id=list_id).first()
+        if existing and existing.confirmed:
+            skipped += 1
+            continue
+        token  = secrets.token_urlsafe(32)
+        expiry = datetime.utcnow() + timedelta(days=7)
+        if existing:
+            existing.token        = token
+            existing.token_expiry = expiry
+        else:
+            db.session.add(Recipient(email=addr, email_list_id=list_id,
+                                     token=token, token_expiry=expiry))
+        reg_url = f'{site_url}/register/{token}' if site_url else f'/register/{token}'
+        subject = f'Invitation: Register for {site_name} notifications'
+        body    = (
+            f'You have been invited to receive alarm notifications from {site_name}.\n\n'
+            f'Please register your contact details (name, phone, and carrier) '
+            f'by visiting the link below:\n\n'
+            f'  {reg_url}\n\n'
+            f'This link expires in 7 days. Phone and carrier are optional but '
+            f'enable SMS text alerts in addition to email.\n\n'
+            f'If you did not expect this invitation, you can safely ignore this email.'
+        )
+        from ..email_utils import send_notification_email  # noqa: local import avoids circular
+        send_notification_email([addr], subject, body, cfg)
+        sent += 1
+
+    db.session.commit()
+    flash(f'Invitations sent: {sent}. Already registered (skipped): {skipped}.', 'success')
+    return redirect(url_for('admin.recipients'))
+
+
+@admin_bp.route('/recipients/<int:rec_id>/resend', methods=['POST'])
+@login_required
+def recipient_resend(rec_id):
+    import secrets
+    from datetime import timedelta
+    r = Recipient.query.get_or_404(rec_id)
+    if r.confirmed:
+        flash(f'{r.email} has already registered.', 'info')
+        return redirect(url_for('admin.recipients'))
+    r.token        = secrets.token_urlsafe(32)
+    r.token_expiry = datetime.utcnow() + timedelta(days=7)
+    db.session.commit()
+    cfg       = {row.key: row.value for row in SystemConfig.query.all()}
+    site_url  = (cfg.get('site_url') or '').rstrip('/')
+    site_name = cfg.get('site_name') or 'EPICS PV Watchdog'
+    reg_url   = f'{site_url}/register/{r.token}' if site_url else f'/register/{r.token}'
+    subject   = f'Invitation: Register for {site_name} notifications'
+    body      = (
+        f'You have been invited to receive alarm notifications from {site_name}.\n\n'
+        f'Please register your contact details by visiting:\n\n'
+        f'  {reg_url}\n\n'
+        f'This link expires in 7 days.'
+    )
+    from ..email_utils import send_notification_email
+    send_notification_email([r.email], subject, body, cfg)
+    flash(f'Invitation resent to {r.email}.', 'success')
+    return redirect(url_for('admin.recipients'))
+
+
+@admin_bp.route('/recipients/<int:rec_id>/delete', methods=['POST'])
+@login_required
+def recipient_delete(rec_id):
+    r = Recipient.query.get_or_404(rec_id)
+    db.session.delete(r)
+    db.session.commit()
+    flash('Recipient removed.', 'success')
+    return redirect(url_for('admin.recipients'))

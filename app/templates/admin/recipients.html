@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Recipients — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-people"></i> Recipients</h4>
+</div>
+
+<p class="text-muted small">
+  Invite beamline scientists to self-register their email and phone number.
+  Registered recipients are automatically included in their assigned email list's notifications
+  (email + SMS via carrier gateway).
+</p>
+
+<!-- Invite form -->
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-primary text-white">
+    <h6 class="mb-0"><i class="bi bi-envelope-plus"></i> Send Invitations</h6>
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('admin.recipients_invite') }}">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label fw-semibold">Email addresses to invite</label>
+          <textarea name="emails" class="form-control font-monospace" rows="4"
+                    placeholder="user1@aps.anl.gov&#10;user2@aps.anl.gov&#10;or comma-separated: a@b.com, c@d.com"></textarea>
+          <small class="text-muted">One address per line, or comma-separated. Duplicate or already-confirmed addresses are skipped.</small>
+        </div>
+        <div class="col-md-4 d-flex flex-column gap-3">
+          <div>
+            <label class="form-label fw-semibold">Add to email list</label>
+            <select name="email_list_id" class="form-select" required>
+              <option value="">— select a list —</option>
+              {% for el in email_lists %}
+              <option value="{{ el.id }}">{{ el.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mt-auto">
+            <button type="submit" class="btn btn-primary w-100">
+              <i class="bi bi-send"></i> Send Invitations
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Recipient table -->
+{% if recipients %}
+<div class="card shadow-sm">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-person-lines-fill"></i> Registered &amp; Pending</span>
+    <span class="text-muted small">
+      {{ recipients | selectattr('confirmed') | list | length }} confirmed,
+      {{ recipients | rejectattr('confirmed') | list | length }} pending
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Status</th>
+          <th>Email</th>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Carrier</th>
+          <th>SMS address</th>
+          <th>Email List</th>
+          <th>Invited</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recipients %}
+        <tr class="{{ '' if r.confirmed else 'text-muted' }}">
+          <td>
+            {% if r.confirmed %}
+              <span class="badge bg-success">Confirmed</span>
+            {% elif r.is_expired %}
+              <span class="badge bg-danger">Expired</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pending</span>
+            {% endif %}
+          </td>
+          <td class="small"><code>{{ r.email }}</code></td>
+          <td class="small">{{ r.name or '—' }}</td>
+          <td class="small">{{ r.phone or '—' }}</td>
+          <td class="small">{{ r.carrier_name or '—' }}</td>
+          <td class="small font-monospace">{{ r.sms_email or '—' }}</td>
+          <td class="small">{{ r.email_list.name if r.email_list else '—' }}</td>
+          <td class="small text-muted">{{ r.created_at.strftime('%Y-%m-%d') }}</td>
+          <td class="text-nowrap">
+            {% if not r.confirmed %}
+            <form method="POST" action="{{ url_for('admin.recipient_resend', rec_id=r.id) }}"
+                  class="d-inline">
+              <button class="btn btn-sm btn-outline-primary py-0" title="Resend invitation">
+                <i class="bi bi-envelope-arrow-up"></i>
+              </button>
+            </form>
+            {% endif %}
+            <form method="POST" action="{{ url_for('admin.recipient_delete', rec_id=r.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('Remove {{ r.email }} from the recipient list?')">
+              <button class="btn btn-sm btn-outline-danger py-0" title="Remove">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-4">
+  No recipients yet. Send your first invitations above.
+</div>
+{% endif %}
+{% endblock %}

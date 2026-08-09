@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Register for Notifications{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5">
+
+    {% if already_confirmed %}
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle-fill text-success" style="font-size:3rem"></i>
+        <h4 class="mt-3">Already registered</h4>
+        <p class="text-muted">
+          <strong>{{ recipient.email }}</strong> is already registered
+          for <strong>{{ recipient.email_list.name }}</strong> notifications.
+        </p>
+        {% if recipient.phone %}
+        <p class="text-muted small">
+          SMS alerts will be sent to {{ recipient.phone }}
+          ({{ recipient.carrier_name or recipient.carrier }}).
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% elif expired %}
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-clock-history text-danger" style="font-size:3rem"></i>
+        <h4 class="mt-3">Invitation expired</h4>
+        <p class="text-muted">
+          This registration link has expired (links are valid for 7 days).<br>
+          Please ask your beamline admin to resend the invitation.
+        </p>
+      </div>
+    </div>
+
+    {% elif success %}
+    <div class="card shadow-sm">
+      <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle-fill text-success" style="font-size:3rem"></i>
+        <h4 class="mt-3">Registration complete!</h4>
+        <p class="text-muted">
+          You will receive alarm notifications at
+          <strong>{{ recipient.email }}</strong>.
+        </p>
+        {% if recipient.sms_email %}
+        <p class="text-muted">
+          SMS alerts will also be sent to
+          <strong>{{ recipient.phone }}</strong>
+          ({{ recipient.carrier_name }}).
+        </p>
+        {% elif recipient.phone %}
+        <p class="text-warning small">
+          Phone saved but no matching carrier found for SMS — email only.
+        </p>
+        {% endif %}
+        <p class="text-muted small mt-3">You can close this page.</p>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-bell"></i>
+          Register for {{ recipient.email_list.name }} notifications
+        </h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-4">
+          Fill in your details below. Name, phone, and carrier are optional —
+          but adding a phone number enables SMS text alerts in addition to email.
+        </p>
+        <form method="POST" action="/register/{{ token }}">
+          <div class="mb-3">
+            <label class="form-label">Email <span class="text-muted small">(pre-filled)</span></label>
+            <input type="email" class="form-control" value="{{ recipient.email }}" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Your name <span class="text-muted small">(optional)</span></label>
+            <input type="text" name="name" class="form-control"
+                   placeholder="e.g. Jane Smith"
+                   value="{{ recipient.name or '' }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">
+              Mobile phone number
+              <span class="text-muted small">(optional — for SMS alerts)</span>
+            </label>
+            <input type="tel" name="phone" class="form-control"
+                   placeholder="e.g. 6305551234"
+                   value="{{ recipient.phone or '' }}">
+            <small class="text-muted">Digits only, no dashes or spaces needed.</small>
+          </div>
+          <div class="mb-4">
+            <label class="form-label">Mobile carrier</label>
+            <select name="carrier" class="form-select">
+              <option value="">— select carrier (required for SMS) —</option>
+              {% for key, (name, domain) in carriers.items() %}
+              <option value="{{ key }}"
+                {{ 'selected' if recipient.carrier == key }}>
+                {{ name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-check2-circle"></i> Complete Registration
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
