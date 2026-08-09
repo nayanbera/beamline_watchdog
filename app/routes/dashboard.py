@@ -168,9 +168,10 @@ def pv_history():
     if not aa_url:
         return jsonify({'error': 'Archiver Appliance URL not configured — go to Admin → Settings'}), 503
 
-    # The AA operator is embedded in the PV name: optimized_N(pvname) returns ~N points
+    # The AA operator is embedded in the PV name: optimized_N(pvname) returns ~N points.
+    # Clamp to 10000 to prevent dumping the full raw archive in one request.
     if count and count.isdigit() and int(count) >= 10:
-        pv_arg = f'optimized_{int(count)}({pv_name})'
+        pv_arg = f'optimized_{min(int(count), 10000)}({pv_name})'
     else:
         pv_arg = pv_name
     aa_params = {'pv': pv_arg, 'from': from_time, 'to': to_time, 'fetchLatestMetadata': 'true'}

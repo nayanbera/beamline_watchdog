@@ -665,7 +665,21 @@ async function fetchAndPlot() {
     lastValues  = points.map(p => (Array.isArray(p.val) ? p.val[0] : p.val));
     lastUnits   = meta.EGU || '';
 
-    infoDiv.textContent = `${points.length.toLocaleString()} points${lastUnits ? '  •  Units: ' + lastUnits : ''}`;
+    // Detect raw-data ceiling: AA returns < 95% of requested → no more data exists
+    const atCeiling = points.length < count * 0.95;
+    const ptsLabel  = atCeiling
+      ? `${points.length.toLocaleString()} points (all available data in range)`
+      : `${points.length.toLocaleString()} points`;
+    infoDiv.textContent = ptsLabel + (lastUnits ? '  •  Units: ' + lastUnits : '');
+
+    // Lock the Max-points input at the actual count so user knows the ceiling
+    if (atCeiling) {
+      const inp = document.getElementById('plot-max-pts');
+      inp.value = points.length;
+      inp.max   = points.length;
+    } else {
+      document.getElementById('plot-max-pts').max = 10000;
+    }
 
     if (plotChart) { plotChart.destroy(); plotChart = null; }
 
@@ -732,6 +746,7 @@ document.getElementById('plotModal').addEventListener('hidden.bs.modal', () => {
   document.getElementById('log-scale-check').checked = false;
   document.getElementById('btn-save-png').disabled = true;
   document.getElementById('btn-save-csv').disabled = true;
+  document.getElementById('plot-max-pts').max = 10000;
   logScale = false;
   lastLabels = []; lastValues = []; lastUnits = '';
 });
