@@ -1,8 +1,15 @@
+import json as _json
+import logging
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, request
 from ..models import PVMonitor, CompoundRule, ProcessMonitor
+
+logger = logging.getLogger(__name__)
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -53,6 +60,10 @@ def index():
     tz = _display_tz()
     now_local = datetime.now(tz=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S %Z')
 
+    from ..models import SystemConfig
+    aa_row = SystemConfig.query.filter_by(key='archiver_url').first()
+    archiver_configured = bool(aa_row and aa_row.value and aa_row.value.strip())
+
     return render_template(
         'dashboard.html',
         pv_groups=_group_by_category(pvs),
@@ -64,6 +75,7 @@ def index():
         total_count=len(pvs),
         disabled_count=disabled_count,
         last_updated=now_local,
+        archiver_configured=archiver_configured,
     )
 
 
@@ -132,3 +144,42 @@ def api_status():
         'disabled_count': disabled_count,
         'last_updated': now_local,
     })
+
+
+@dashboard_bp.route('/api/pv-history')
+def pv_history():
+    """Proxy to Archiver Appliance getData.json — avoids browser CORS issues."""
+    from ..models import SystemConfig
+
+    pv_name = request.args.get('pv', '').strip()
+    from_time = request.args.get('from', '').strip()
+    to_time = request.args.get('to', '').strip()
+
+    if not pv_name:
+        return jsonify({'error': 'pv parameter required'}), 400
+
+    # Only serve data for PVs that are actually monitored
+    if not PVMonitor.query.filter_by(pv_name=pv_name).first():
+        return jsonify({'error': 'PV not in monitor list'}), 404
+
+    row = SystemConfig.query.filter_by(key='archiver_url').first()
+    aa_url = (row.value or '').strip() if row else ''
+    if not aa_url:
+        return jsonify({'error': 'Archiver Appliance URL not configured — go to Admin → Settings'}), 503
+
+    params = urllib.parse.urlencode({'pv': pv_name, 'from': from_time, 'to': to_time,
+                                     'fetchLatestMetadata': 'true'})
+    url = f"{aa_url.rstrip('/')}/retrieval/data/getData.json?{params}"
+
+    try:
+        req = urllib.request.Request(url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = _json.loads(resp.read())
+        return jsonify(data)
+    except urllib.error.URLError as e:
+        reason = getattr(e, 'reason', str(e))
+        logger.warning('AA fetch failed for %s: %s', pv_name, reason)
+        return jsonify({'error': f'Could not reach Archiver Appliance: {reason}'}), 502
+    except Exception as e:
+        logger.exception('AA fetch error for %s', pv_name)
+        return jsonify({'error': str(e)}), 500

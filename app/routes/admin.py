@@ -419,7 +419,8 @@ def settings():
             keys = ['mail_server', 'mail_port', 'mail_username', 'mail_password',
                     'mail_use_tls', 'mail_use_ssl', 'mail_sender',
                     'check_interval', 'default_notify_interval', 'site_name',
-                    'timezone', 'epics_ca_addr_list', 'epics_ca_auto_addr_list']
+                    'timezone', 'archiver_url',
+                    'epics_ca_addr_list', 'epics_ca_auto_addr_list']
             for key in keys:
                 if key in ('mail_use_tls', 'mail_use_ssl'):
                     val = 'true' if request.form.get(key) else 'false'

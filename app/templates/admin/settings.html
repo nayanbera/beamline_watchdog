@@ -110,6 +110,22 @@
           </div>
 
           <hr>
+          <h6 class="text-muted mb-3">Archiver Appliance</h6>
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Base URL</label>
+              <input type="text" name="archiver_url" class="form-control font-monospace"
+                value="{{ cfg.get('archiver_url', '') }}"
+                placeholder="http://archiver.beamline.local:17668">
+              <small class="text-muted">
+                Used to fetch PV history plots on the dashboard.
+                Leave blank to disable the plot feature.
+                Example: <code>http://192.168.1.50:17668</code>
+              </small>
+            </div>
+          </div>
+
+          <hr>
           <h6 class="text-muted mb-3">EPICS Channel Access</h6>
           <div class="row g-3">
             <div class="col-12">

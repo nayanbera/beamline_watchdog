@@ -151,6 +151,7 @@ def _initialize_defaults():
         ('default_notify_interval','3600',               'Min seconds between repeated notifications'),
         ('site_name',              'EPICS PV Watchdog',  'Site name shown in page header'),
         ('timezone',               'UTC',                'Display timezone for all timestamps (IANA name, e.g. America/Chicago)'),
+        ('archiver_url',           '',                   'Archiver Appliance base URL (e.g. http://archiver.local:17668)'),
         ('epics_ca_addr_list',     '',                   'EPICS_CA_ADDR_LIST — space-separated CA broadcast/unicast addresses'),
         ('epics_ca_auto_addr_list','YES',                'EPICS_CA_AUTO_ADDR_LIST — YES or NO'),
     ]

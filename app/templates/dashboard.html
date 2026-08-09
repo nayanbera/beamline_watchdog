@@ -95,6 +95,7 @@
               <th>Alarm Condition</th>
               <th>Last Checked</th>
               <th>Last Alarm</th>
+              {% if archiver_configured %}<th style="width:40px"></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -133,6 +134,15 @@
                   <span class="text-muted">—</span>
                 {% endif %}
               </td>
+              {% if archiver_configured %}
+              <td>
+                <button class="btn btn-sm btn-outline-info py-0 px-1"
+                        onclick="openPlot('{{ pv.pv_name }}', '{{ (pv.alias or pv.pv_name) | replace("'", "\\'") }}')"
+                        title="Plot history from Archiver Appliance">
+                  <i class="bi bi-graph-up"></i>
+                </button>
+              </td>
+              {% endif %}
             </tr>
             {% endfor %}
           </tbody>
@@ -312,6 +322,58 @@
 {% endblock %}
 
 {% block scripts %}
+{% if archiver_configured %}
+<!-- Chart.js + date-fns adapter for PV history plots -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<!-- PV History Plot Modal -->
+<div class="modal fade" id="plotModal" tabindex="-1" aria-labelledby="plotModalLabel">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="plotModalLabel">
+          <i class="bi bi-graph-up text-info me-2"></i>
+          <span id="plot-display-name"></span>
+          <code class="ms-2 small text-muted" id="plot-pv-name-code"></code>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Time range controls -->
+        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-secondary" onclick="setRange(1)">1 h</button>
+            <button class="btn btn-outline-secondary" onclick="setRange(6)">6 h</button>
+            <button class="btn btn-outline-secondary active" onclick="setRange(24)">24 h</button>
+            <button class="btn btn-outline-secondary" onclick="setRange(72)">3 d</button>
+            <button class="btn btn-outline-secondary" onclick="setRange(168)">7 d</button>
+          </div>
+          <span class="text-muted small">or custom:</span>
+          <input type="datetime-local" id="from-dt" class="form-control form-control-sm" style="width:195px">
+          <span class="text-muted">→</span>
+          <input type="datetime-local" id="to-dt" class="form-control form-control-sm" style="width:195px">
+          <button class="btn btn-sm btn-primary" onclick="fetchAndPlot()">
+            <i class="bi bi-arrow-clockwise"></i> Fetch
+          </button>
+        </div>
+        <!-- Status messages -->
+        <div id="plot-error" class="alert alert-danger py-2" style="display:none"></div>
+        <div id="plot-loading" class="text-center text-muted py-5" style="display:none">
+          <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+          Fetching data from Archiver Appliance…
+        </div>
+        <!-- Chart -->
+        <div id="plot-container" style="position:relative; height:420px; display:none">
+          <canvas id="plot-canvas"></canvas>
+        </div>
+        <div id="plot-info" class="text-muted small mt-1"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script>
 const REFRESH_MS = 5000;
 
@@ -436,5 +498,153 @@ document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(header => {
   target.addEventListener('show.bs.collapse',  () => header.querySelector('.collapse-icon')?.classList.replace('bi-chevron-up',   'bi-chevron-down'));
   target.addEventListener('hide.bs.collapse',  () => header.querySelector('.collapse-icon')?.classList.replace('bi-chevron-down', 'bi-chevron-up'));
 });
+
+// ---------------------------------------------------------------------------
+// PV History Plot (only active when Archiver Appliance is configured)
+// ---------------------------------------------------------------------------
+{% if archiver_configured %}
+let plotChart = null;
+let currentPV  = '';
+let plotModal  = null;
+
+function openPlot(pvName, displayName) {
+  currentPV = pvName;
+  document.getElementById('plot-pv-name-code').textContent  = pvName;
+  document.getElementById('plot-display-name').textContent  = displayName !== pvName ? displayName : '';
+  document.getElementById('plot-error').style.display       = 'none';
+  document.getElementById('plot-container').style.display   = 'none';
+  document.getElementById('plot-info').textContent          = '';
+  // Default: last 24 h, no auto-fetch until modal is shown
+  setRange(24, false);
+  if (!plotModal) plotModal = new bootstrap.Modal(document.getElementById('plotModal'));
+  plotModal.show();
+  fetchAndPlot();
+}
+
+const PRESET_HOURS = [1, 6, 24, 72, 168];
+function setRange(hours, doFetch = true) {
+  const now  = new Date();
+  const from = new Date(now - hours * 3600000);
+  document.getElementById('from-dt').value = toDateTimeLocal(from);
+  document.getElementById('to-dt').value   = toDateTimeLocal(now);
+  // Highlight matching preset button
+  document.querySelectorAll('#plotModal .btn-group .btn').forEach((b, i) => {
+    b.classList.toggle('active', PRESET_HOURS[i] === hours);
+  });
+  if (doFetch) fetchAndPlot();
+}
+
+function toDateTimeLocal(d) {
+  // Returns YYYY-MM-DDTHH:MM (local browser time) for the datetime-local input
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function fetchAndPlot() {
+  if (!currentPV) return;
+  const fromVal = document.getElementById('from-dt').value;
+  const toVal   = document.getElementById('to-dt').value;
+  if (!fromVal || !toVal) return;
+
+  const fromISO = new Date(fromVal).toISOString();
+  const toISO   = new Date(toVal).toISOString();
+
+  const errDiv  = document.getElementById('plot-error');
+  const loadDiv = document.getElementById('plot-loading');
+  const container = document.getElementById('plot-container');
+  const infoDiv = document.getElementById('plot-info');
+
+  errDiv.style.display      = 'none';
+  loadDiv.style.display     = '';
+  container.style.display   = 'none';
+  infoDiv.textContent       = '';
+
+  try {
+    const url  = `/api/pv-history?pv=${encodeURIComponent(currentPV)}&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      errDiv.textContent    = data.error || `Server error ${resp.status}`;
+      errDiv.style.display  = '';
+      return;
+    }
+
+    // AA response: [{meta:{...}, data:[{secs, nanos, val}, ...]}]
+    if (!Array.isArray(data) || !data.length || !data[0].data || !data[0].data.length) {
+      errDiv.textContent   = 'No data available for this PV in the selected time range.';
+      errDiv.style.display = '';
+      return;
+    }
+
+    const meta   = data[0].meta || {};
+    const points = data[0].data;
+    const labels = points.map(p => new Date((p.secs + (p.nanos || 0) / 1e9) * 1000));
+    const values = points.map(p => (Array.isArray(p.val) ? p.val[0] : p.val));
+    const units  = meta.EGU || '';
+
+    infoDiv.textContent = `${points.length.toLocaleString()} points  •  ${units ? 'Units: ' + units : ''}`;
+
+    if (plotChart) { plotChart.destroy(); plotChart = null; }
+
+    const ctx = document.getElementById('plot-canvas').getContext('2d');
+    plotChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: units ? `${currentPV} (${units})` : currentPV,
+          data: values,
+          borderColor: 'rgb(13, 110, 253)',
+          backgroundColor: 'rgba(13, 110, 253, 0.06)',
+          borderWidth: 1.5,
+          pointRadius: points.length > 300 ? 0 : 3,
+          pointHoverRadius: 4,
+          tension: 0.1,
+          fill: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            type: 'time',
+            time: { tooltipFormat: 'yyyy-MM-dd HH:mm:ss' },
+            ticks: { maxTicksLimit: 10 },
+            title: { display: true, text: 'Time' },
+          },
+          y: {
+            title: { display: !!units, text: units },
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.parsed.y}${units ? ' ' + units : ''}`,
+            }
+          }
+        }
+      }
+    });
+
+    container.style.display = '';
+
+  } catch (e) {
+    errDiv.textContent   = `Request failed: ${e.message}`;
+    errDiv.style.display = '';
+  } finally {
+    loadDiv.style.display = 'none';
+  }
+}
+
+// Clean up chart when modal closes to free canvas resources
+document.getElementById('plotModal').addEventListener('hidden.bs.modal', () => {
+  if (plotChart) { plotChart.destroy(); plotChart = null; }
+  document.getElementById('plot-container').style.display = 'none';
+});
+{% endif %}
 </script>
 {% endblock %}
