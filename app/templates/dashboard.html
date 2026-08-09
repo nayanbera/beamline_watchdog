@@ -552,7 +552,7 @@ function updateAAViewerLink() {
   if (fromVal) params.set('from', new Date(fromVal).toISOString());
   if (toVal)   params.set('to',   new Date(toVal).toISOString());
   document.getElementById('btn-open-aa').href =
-    `${base}/viewer/index.html?${params.toString()}`;
+    `${base}/retrieval/ui/viewer/archViewer.html?${params.toString()}`;
 }
 
 function openPlot(pvName, displayName) {
