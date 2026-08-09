@@ -341,7 +341,7 @@
       </div>
       <div class="modal-body">
         <!-- Time range controls -->
-        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
           <div class="btn-group btn-group-sm">
             <button class="btn btn-outline-secondary" onclick="setRange(1)">1 h</button>
             <button class="btn btn-outline-secondary" onclick="setRange(6)">6 h</button>
@@ -356,6 +356,30 @@
           <button class="btn btn-sm btn-primary" onclick="fetchAndPlot()">
             <i class="bi bi-arrow-clockwise"></i> Fetch
           </button>
+        </div>
+        <!-- Chart options row -->
+        <div class="d-flex align-items-center gap-3 mb-3 flex-wrap border-top pt-2">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="log-scale-check"
+                   onchange="toggleLogScale(this.checked)">
+            <label class="form-check-label small" for="log-scale-check">Log Y axis</label>
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <label class="form-label mb-0 small text-nowrap text-muted">Max points:</label>
+            <input type="number" id="plot-max-pts" class="form-control form-control-sm"
+                   style="width:90px" placeholder="auto" min="100" max="10000" step="100"
+                   title="Number of data points to fetch (leave blank for auto based on chart width)">
+          </div>
+          <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="btn-save-png"
+                    onclick="savePNG()" disabled title="Save plot as PNG image">
+              <i class="bi bi-image"></i> PNG
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-save-csv"
+                    onclick="saveCSV()" disabled title="Download data as CSV">
+              <i class="bi bi-file-earmark-spreadsheet"></i> CSV
+            </button>
+          </div>
         </div>
         <!-- Status messages -->
         <div id="plot-error" class="alert alert-danger py-2" style="display:none"></div>
@@ -503,9 +527,13 @@ document.querySelectorAll('[data-bs-toggle="collapse"]').forEach(header => {
 // PV History Plot (only active when Archiver Appliance is configured)
 // ---------------------------------------------------------------------------
 {% if archiver_configured %}
-let plotChart = null;
+let plotChart  = null;
 let currentPV  = '';
 let plotModal  = null;
+let logScale   = false;
+let lastLabels = [];
+let lastValues = [];
+let lastUnits  = '';
 
 function openPlot(pvName, displayName) {
   currentPV = pvName;
@@ -514,7 +542,11 @@ function openPlot(pvName, displayName) {
   document.getElementById('plot-error').style.display       = 'none';
   document.getElementById('plot-container').style.display   = 'none';
   document.getElementById('plot-info').textContent          = '';
-  // Default: last 24 h, no auto-fetch until modal is shown
+  document.getElementById('log-scale-check').checked        = false;
+  document.getElementById('btn-save-png').disabled          = true;
+  document.getElementById('btn-save-csv').disabled          = true;
+  logScale = false;
+  lastLabels = []; lastValues = []; lastUnits = '';
   setRange(24, false);
   if (!plotModal) plotModal = new bootstrap.Modal(document.getElementById('plotModal'));
   plotModal.show();
@@ -527,7 +559,6 @@ function setRange(hours, doFetch = true) {
   const from = new Date(now - hours * 3600000);
   document.getElementById('from-dt').value = toDateTimeLocal(from);
   document.getElementById('to-dt').value   = toDateTimeLocal(now);
-  // Highlight matching preset button
   document.querySelectorAll('#plotModal .btn-group .btn').forEach((b, i) => {
     b.classList.toggle('active', PRESET_HOURS[i] === hours);
   });
@@ -535,9 +566,59 @@ function setRange(hours, doFetch = true) {
 }
 
 function toDateTimeLocal(d) {
-  // Returns YYYY-MM-DDTHH:MM (local browser time) for the datetime-local input
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Returns desired number of points: user input if set, else ~1pt per 1.5px of chart width
+function getDesiredCount() {
+  const inp = document.getElementById('plot-max-pts').value.trim();
+  if (inp && !isNaN(inp) && parseInt(inp) >= 100) return parseInt(inp);
+  const w = document.getElementById('plot-container').offsetWidth;
+  return Math.max(300, Math.min(2000, Math.round((w > 100 ? w : 1200) / 1.5)));
+}
+
+function toggleLogScale(checked) {
+  logScale = checked;
+  if (!plotChart) return;
+  plotChart.options.scales.y.type = logScale ? 'logarithmic' : 'linear';
+  plotChart.update();
+  // Warn if data contains zeros/negatives that will be hidden on log scale
+  const infoDiv = document.getElementById('plot-info');
+  const base = lastLabels.length
+    ? `${lastLabels.length.toLocaleString()} points${lastUnits ? '  •  Units: ' + lastUnits : ''}`
+    : infoDiv.textContent.replace(/\s+•\s+Note:.*$/, '');
+  if (logScale && lastValues.some(v => v <= 0)) {
+    infoDiv.textContent = base + '  •  Note: zero/negative values hidden on log scale';
+  } else {
+    infoDiv.textContent = base;
+  }
+}
+
+function savePNG() {
+  if (!plotChart) return;
+  const link = document.createElement('a');
+  const ts   = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+  link.download = `${currentPV.replace(/:/g, '_')}_${ts}.png`;
+  link.href     = plotChart.toBase64Image('image/png', 1.0);
+  link.click();
+}
+
+function saveCSV() {
+  if (!lastLabels.length) return;
+  const header = `timestamp_iso,value${lastUnits ? '_' + lastUnits : ''}`;
+  const rows   = [header];
+  lastLabels.forEach((t, i) => {
+    rows.push(`${t instanceof Date ? t.toISOString() : t},${lastValues[i]}`);
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const burl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const ts   = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+  link.download = `${currentPV.replace(/:/g, '_')}_${ts}.csv`;
+  link.href     = burl;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(burl), 5000);
 }
 
 async function fetchAndPlot() {
@@ -548,25 +629,26 @@ async function fetchAndPlot() {
 
   const fromISO = new Date(fromVal).toISOString();
   const toISO   = new Date(toVal).toISOString();
+  const count   = getDesiredCount();
 
-  const errDiv  = document.getElementById('plot-error');
-  const loadDiv = document.getElementById('plot-loading');
+  const errDiv    = document.getElementById('plot-error');
+  const loadDiv   = document.getElementById('plot-loading');
   const container = document.getElementById('plot-container');
-  const infoDiv = document.getElementById('plot-info');
+  const infoDiv   = document.getElementById('plot-info');
 
-  errDiv.style.display      = 'none';
-  loadDiv.style.display     = '';
-  container.style.display   = 'none';
-  infoDiv.textContent       = '';
+  errDiv.style.display    = 'none';
+  loadDiv.style.display   = '';
+  container.style.display = 'none';
+  infoDiv.textContent     = '';
 
   try {
-    const url  = `/api/pv-history?pv=${encodeURIComponent(currentPV)}&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`;
+    const url  = `/api/pv-history?pv=${encodeURIComponent(currentPV)}&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}&count=${count}`;
     const resp = await fetch(url);
     const data = await resp.json();
 
     if (!resp.ok) {
-      errDiv.textContent    = data.error || `Server error ${resp.status}`;
-      errDiv.style.display  = '';
+      errDiv.textContent   = data.error || `Server error ${resp.status}`;
+      errDiv.style.display = '';
       return;
     }
 
@@ -577,13 +659,13 @@ async function fetchAndPlot() {
       return;
     }
 
-    const meta   = data[0].meta || {};
+    const meta  = data[0].meta || {};
     const points = data[0].data;
-    const labels = points.map(p => new Date((p.secs + (p.nanos || 0) / 1e9) * 1000));
-    const values = points.map(p => (Array.isArray(p.val) ? p.val[0] : p.val));
-    const units  = meta.EGU || '';
+    lastLabels  = points.map(p => new Date((p.secs + (p.nanos || 0) / 1e9) * 1000));
+    lastValues  = points.map(p => (Array.isArray(p.val) ? p.val[0] : p.val));
+    lastUnits   = meta.EGU || '';
 
-    infoDiv.textContent = `${points.length.toLocaleString()} points  •  ${units ? 'Units: ' + units : ''}`;
+    infoDiv.textContent = `${points.length.toLocaleString()} points${lastUnits ? '  •  Units: ' + lastUnits : ''}`;
 
     if (plotChart) { plotChart.destroy(); plotChart = null; }
 
@@ -591,10 +673,10 @@ async function fetchAndPlot() {
     plotChart = new Chart(ctx, {
       type: 'line',
       data: {
-        labels,
+        labels: lastLabels,
         datasets: [{
-          label: units ? `${currentPV} (${units})` : currentPV,
-          data: values,
+          label: lastUnits ? `${currentPV} (${lastUnits})` : currentPV,
+          data: lastValues,
           borderColor: 'rgb(13, 110, 253)',
           backgroundColor: 'rgba(13, 110, 253, 0.06)',
           borderWidth: 1.5,
@@ -616,14 +698,15 @@ async function fetchAndPlot() {
             title: { display: true, text: 'Time' },
           },
           y: {
-            title: { display: !!units, text: units },
+            type: logScale ? 'logarithmic' : 'linear',
+            title: { display: !!lastUnits, text: lastUnits },
           }
         },
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: ctx => `${ctx.parsed.y}${units ? ' ' + units : ''}`,
+              label: ctx => `${ctx.parsed.y}${lastUnits ? ' ' + lastUnits : ''}`,
             }
           }
         }
@@ -631,6 +714,8 @@ async function fetchAndPlot() {
     });
 
     container.style.display = '';
+    document.getElementById('btn-save-png').disabled = false;
+    document.getElementById('btn-save-csv').disabled = false;
 
   } catch (e) {
     errDiv.textContent   = `Request failed: ${e.message}`;
@@ -644,6 +729,11 @@ async function fetchAndPlot() {
 document.getElementById('plotModal').addEventListener('hidden.bs.modal', () => {
   if (plotChart) { plotChart.destroy(); plotChart = null; }
   document.getElementById('plot-container').style.display = 'none';
+  document.getElementById('log-scale-check').checked = false;
+  document.getElementById('btn-save-png').disabled = true;
+  document.getElementById('btn-save-csv').disabled = true;
+  logScale = false;
+  lastLabels = []; lastValues = []; lastUnits = '';
 });
 {% endif %}
 </script>

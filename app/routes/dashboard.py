@@ -154,6 +154,7 @@ def pv_history():
     pv_name = request.args.get('pv', '').strip()
     from_time = request.args.get('from', '').strip()
     to_time = request.args.get('to', '').strip()
+    count = request.args.get('count', '').strip()
 
     if not pv_name:
         return jsonify({'error': 'pv parameter required'}), 400
@@ -167,9 +168,10 @@ def pv_history():
     if not aa_url:
         return jsonify({'error': 'Archiver Appliance URL not configured — go to Admin → Settings'}), 503
 
-    params = urllib.parse.urlencode({'pv': pv_name, 'from': from_time, 'to': to_time,
-                                     'fetchLatestMetadata': 'true'})
-    url = f"{aa_url.rstrip('/')}/retrieval/data/getData.json?{params}"
+    aa_params = {'pv': pv_name, 'from': from_time, 'to': to_time, 'fetchLatestMetadata': 'true'}
+    if count and count.isdigit() and int(count) >= 10:
+        aa_params['operator'] = f'mean_{int(count)}'
+    url = f"{aa_url.rstrip('/')}/retrieval/data/getData.json?{urllib.parse.urlencode(aa_params)}"
 
     try:
         req = urllib.request.Request(url, headers={'Accept': 'application/json'})
