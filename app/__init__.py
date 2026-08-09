@@ -123,6 +123,11 @@ def _run_migrations():
         existing = {row[1] for row in result}
         if 'category_id' not in existing:
             conn.execute(text('ALTER TABLE process_monitors ADD COLUMN category_id INTEGER REFERENCES categories(id)'))
+
+        result = conn.execute(text("PRAGMA table_info(categories)"))
+        existing = {row[1] for row in result}
+        if 'color' not in existing:
+            conn.execute(text('ALTER TABLE categories ADD COLUMN color TEXT'))
         conn.commit()
 
 

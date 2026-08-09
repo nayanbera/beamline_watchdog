@@ -79,7 +79,7 @@ def index():
 
     all_categories = Category.query.order_by(Category.name).all()
     category_colors = {
-        cat.name: CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)]
+        cat.name: (cat.color or CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)])
         for i, cat in enumerate(all_categories)
     }
     category_colors['Uncategorized'] = '#6c757d'

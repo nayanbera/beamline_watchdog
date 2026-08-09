@@ -112,6 +112,7 @@ class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
     description = db.Column(db.String(500))
+    color = db.Column(db.String(7))  # hex color e.g. '#1971c2', NULL = use auto-palette
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

@@ -100,6 +100,8 @@ def category_form(cat_id=None):
     if request.method == 'POST':
         cat.name = request.form.get('name', '').strip()
         cat.description = request.form.get('description', '').strip() or None
+        color = request.form.get('color', '').strip()
+        cat.color = color if color and color.startswith('#') and len(color) == 7 else None
         if not cat.name:
             errors['name'] = 'Category name is required.'
         existing = Category.query.filter_by(name=cat.name).first()

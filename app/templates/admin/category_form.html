@@ -26,6 +26,19 @@
             <input type="text" name="description" class="form-control"
               value="{{ cat.description or '' }}" placeholder="Optional description">
           </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Color</label>
+            <div class="d-flex align-items-center gap-3">
+              <input type="color" name="color" id="cat-color"
+                     class="form-control form-control-color"
+                     value="{{ cat.color or '#1971c2' }}"
+                     title="Pick a color for this category">
+              <span class="text-muted small">
+                Used for the category card header and badges on the dashboard.
+                Leave as-is to use the default.
+              </span>
+            </div>
+          </div>
           <hr>
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary">
