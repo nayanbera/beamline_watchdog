@@ -168,9 +168,12 @@ def pv_history():
     if not aa_url:
         return jsonify({'error': 'Archiver Appliance URL not configured — go to Admin → Settings'}), 503
 
-    aa_params = {'pv': pv_name, 'from': from_time, 'to': to_time, 'fetchLatestMetadata': 'true'}
+    # The AA operator is embedded in the PV name: optimized_N(pvname) returns ~N points
     if count and count.isdigit() and int(count) >= 10:
-        aa_params['operator'] = f'mean_{int(count)}'
+        pv_arg = f'optimized_{int(count)}({pv_name})'
+    else:
+        pv_arg = pv_name
+    aa_params = {'pv': pv_arg, 'from': from_time, 'to': to_time, 'fetchLatestMetadata': 'true'}
     url = f"{aa_url.rstrip('/')}/retrieval/data/getData.json?{urllib.parse.urlencode(aa_params)}"
 
     try:
