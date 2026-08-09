@@ -137,6 +137,7 @@ def category_delete(cat_id):
 def pvs():
     cat_filter = request.args.get('category', '')
     categories = Category.query.order_by(Category.name).all()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
     q = PVMonitor.query.order_by(PVMonitor.pv_name)
     if cat_filter == '__none__':
         q = q.filter(PVMonitor.category_id == None)
@@ -144,7 +145,8 @@ def pvs():
         q = q.join(Category).filter(Category.name == cat_filter)
     items = q.all()
     return render_template('admin/pvs.html', pvs=items,
-                           categories=categories, cat_filter=cat_filter)
+                           categories=categories, cat_filter=cat_filter,
+                           email_lists=email_lists)
 
 
 @admin_bp.route('/pvs/add', methods=['GET', 'POST'])
@@ -302,7 +304,9 @@ def rules():
     items = CompoundRule.query.order_by(CompoundRule.name).all()
     all_pvs = PVMonitor.query.order_by(PVMonitor.pv_name).all()
     pv_map = {p.id: p.display_name for p in all_pvs}
-    return render_template('admin/rules.html', rules=items, pv_map=pv_map)
+    email_lists = EmailList.query.order_by(EmailList.name).all()
+    return render_template('admin/rules.html', rules=items, pv_map=pv_map,
+                           email_lists=email_lists)
 
 
 @admin_bp.route('/rules/add', methods=['GET', 'POST'])
@@ -575,6 +579,7 @@ MATCH_TYPES = [
 def processes():
     cat_filter = request.args.get('category', '')
     categories = Category.query.order_by(Category.name).all()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
     q = ProcessMonitor.query.order_by(ProcessMonitor.name)
     if cat_filter == '__none__':
         q = q.filter(ProcessMonitor.category_id == None)
@@ -586,7 +591,53 @@ def processes():
                       .limit(10).all())
     return render_template('admin/processes.html',
                            processes=items, recent_actions=recent_actions,
-                           categories=categories, cat_filter=cat_filter)
+                           categories=categories, cat_filter=cat_filter,
+                           email_lists=email_lists)
+
+
+@admin_bp.route('/bulk', methods=['POST'])
+@login_required
+def bulk_update():
+    """Bulk-edit email list, category, or enabled state for multiple PVs/processes/rules."""
+    item_type = request.form.get('type', '')
+    ids = [int(i) for i in request.form.get('ids', '').split(',') if i.strip().isdigit()]
+
+    if not ids:
+        flash('No items selected.', 'warning')
+        return redirect(request.referrer or url_for('admin.index'))
+
+    def _parse(key):
+        """Return (value_or_None, changed). '' = no change, '__none__' = set NULL."""
+        v = request.form.get(key, '').strip()
+        if v == '':
+            return None, False
+        if v == '__none__':
+            return None, True
+        return v, True
+
+    cat_val,   change_cat     = _parse('category_id')
+    email_val, change_email   = _parse('email_list_id')
+    enabled_val, change_enabled = _parse('enabled')
+
+    MODEL_MAP = {'pv': PVMonitor, 'process': ProcessMonitor, 'rule': CompoundRule}
+    REDIRECT_MAP = {'pv': 'admin.pvs', 'process': 'admin.processes', 'rule': 'admin.rules'}
+
+    model = MODEL_MAP.get(item_type)
+    if not model:
+        flash('Unknown item type.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    items = model.query.filter(model.id.in_(ids)).all()
+    for item in items:
+        if change_cat and hasattr(item, 'category_id'):
+            item.category_id = int(cat_val) if cat_val else None
+        if change_email and hasattr(item, 'email_list_id'):
+            item.email_list_id = int(email_val) if email_val else None
+        if change_enabled:
+            item.enabled = (enabled_val == '1')
+    db.session.commit()
+    flash(f'Updated {len(items)} item(s).', 'success')
+    return redirect(url_for(REDIRECT_MAP[item_type]))
 
 
 @admin_bp.route('/processes/add', methods=['GET', 'POST'])
