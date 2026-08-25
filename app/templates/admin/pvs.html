@@ -97,7 +97,12 @@
           </td>
           <td>
             <span class="badge {{ status_badge(pv.status) }}">{{ pv.status }}</span>
-            {% if not pv.enabled %}<span class="badge bg-light text-dark">DISABLED</span>{% endif %}
+            {% if not pv.enabled %}
+              <span class="badge bg-light text-dark">DISABLED</span>
+              {% if pv.auto_enable %}
+                <span class="badge bg-info text-dark" title="Will auto-enable when alarm condition clears">AUTO</span>
+              {% endif %}
+            {% endif %}
           </td>
           <td><code class="small">{{ pv.pv_name }}</code></td>
           <td>{{ pv.alias or '—' }}</td>

@@ -168,6 +168,7 @@ def pv_form(pv_id=None):
         pv.description = request.form.get('description', '').strip() or None
         pv.condition_op = request.form.get('condition_op', '>')
         pv.enabled = 'enabled' in request.form
+        pv.auto_enable = 'auto_enable' in request.form
         pv.notify_flag = 'notify_flag' in request.form
         pv.notify_on_disconnect = 'notify_on_disconnect' in request.form
         cat_id = request.form.get('category_id', '')

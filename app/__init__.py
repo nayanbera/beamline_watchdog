@@ -115,6 +115,8 @@ def _run_migrations():
             ('notify_on_disconnect',    'INTEGER DEFAULT 0'),
             ('last_notified_disconnect','DATETIME'),
             ('category_id',             'INTEGER REFERENCES categories(id)'),
+            ('auto_enable',             'INTEGER DEFAULT 0'),
+            ('auto_enabled_at',         'DATETIME'),
         ]:
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))

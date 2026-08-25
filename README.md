@@ -15,6 +15,7 @@ A web-based EPICS PV and process watchdog. Monitors process variables against co
 - **CSRF protection** — all POST forms are token-protected (Flask-WTF)
 - **Rate-limited login** — 20 requests/minute per IP to block brute-force attacks
 - **Background watchdog** — APScheduler runs in-process; configurable check interval
+- **Auto-enable** — disabled PVs with the auto-enable flag are still read in the background and re-enabled automatically once their alarm condition is no longer met
 
 ---
 
@@ -31,7 +32,8 @@ A web-based EPICS PV and process watchdog. Monitors process variables against co
    - [First-time setup](#first-time-setup)
 3. [EPICS Configuration](#epics-configuration)
 4. [Process Control](#process-control)
-5. [Compound Rules](#compound-rules)
+5. [Auto-Enable](#auto-enable)
+6. [Compound Rules](#compound-rules)
 6. [Project Layout](#project-layout)
 7. [Environment Variables](#environment-variables)
 8. [Production Security Checklist](#production-security-checklist)
@@ -403,6 +405,43 @@ public dashboard.
 
 > **Important:** Do not monitor the Flask/Gunicorn process itself and assign a Stop command to it —
 > stopping it will take down the web interface. Use systemd to manage the server process instead.
+
+---
+
+## Auto-Enable
+
+A PV can be temporarily disabled (e.g. during maintenance, or because it is stuck in alarm)
+while still being automatically re-enabled once it recovers.
+
+**How to enable the feature:**
+
+1. Go to **Admin → PV Monitors** and edit any PV.
+2. Uncheck *Enable monitoring for this PV* if you want it to start disabled.
+3. Check *Auto-enable when alarm condition clears*.
+4. Save.
+
+**What happens at runtime:**
+
+- On every watchdog tick the watchdog reads the PV value even though it is disabled.
+- If the value is readable **and** the alarm condition is **no longer met**, the PV is
+  automatically set to `enabled = True` and its status becomes `OK`.
+- The re-enable event is written to the **Notification Log** (`/admin/logs`) with status
+  `AUTO_ENABLED` so there is a full audit trail.
+- If the PV is still disconnected or still in alarm, it stays disabled and is re-checked
+  on the next tick.
+
+**Visual indicator:**
+
+In the PV list, a disabled PV with auto-enable turned on shows a cyan **AUTO** badge next
+to the grey **DISABLED** badge so you can see at a glance which monitors are waiting to
+self-activate.
+
+**Important notes:**
+
+- Auto-enable only triggers in one direction — it re-enables the PV when the condition
+  clears. It does **not** re-disable the PV if the condition trips again. Use the normal
+  Enable / Disable toggle for that.
+- If `pyepics` / EPICS is not available, the auto-enable loop is skipped entirely.
 
 ---
 

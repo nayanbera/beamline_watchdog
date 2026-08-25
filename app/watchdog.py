@@ -321,6 +321,47 @@ def check_all_pvs(app):
 
         db.session.commit()
 
+        # --- Auto-enable disabled PVs ---
+        # PVs with auto_enable=True are checked even while disabled.
+        # When the alarm condition is no longer met the PV is re-enabled automatically.
+        if EPICS_AVAILABLE:
+            for pv in PVMonitor.query.filter_by(enabled=False, auto_enable=True).all():
+                try:
+                    raw = epics.caget(pv.pv_name, timeout=1.0)
+                    if raw is None:
+                        continue  # still disconnected — leave disabled
+                    alarm = is_in_alarm(raw, pv.condition_op,
+                                        pv.condition_value, pv.condition_value2)
+                    if alarm is False:  # condition no longer met → re-enable
+                        try:
+                            fval = float(raw)
+                            pv.current_value = fval
+                            pv.current_value_str = f'{fval:.6g}'
+                        except (TypeError, ValueError):
+                            pv.current_value = None
+                            pv.current_value_str = str(raw)
+                        pv.enabled = True
+                        pv.status = 'OK'
+                        pv.last_checked = now
+                        pv.auto_enabled_at = now
+                        logger.info('Auto-enabled PV %s (value=%s)', pv.pv_name, raw)
+                        body = (
+                            f"EPICS PV Watchdog — AUTO-ENABLED\n"
+                            f"{'='*50}\n"
+                            f"PV Name : {pv.pv_name}\n"
+                            f"Alias   : {pv.alias or 'N/A'}\n\n"
+                            f"Current Value : {raw}\n"
+                            f"Condition (no longer met): {pv.condition_str}\n\n"
+                            f"The PV has been automatically re-enabled.\n"
+                            f"Time : {now.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                        )
+                        _log_notification(db, 'PV', pv.id, pv.pv_name,
+                                          'AUTO_ENABLED', body, [], True, None)
+                except Exception as exc:
+                    logger.exception('Error during auto-enable check for PV %s: %s',
+                                     pv.pv_name, exc)
+            db.session.commit()
+
         # --- Compound rules ---
         for rule in CompoundRule.query.filter_by(enabled=True).all():
             try:

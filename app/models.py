@@ -162,6 +162,8 @@ class PVMonitor(db.Model):
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
     email_list = db.relationship('EmailList', backref='pv_monitors', foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
+    auto_enable = db.Column(db.Boolean, default=False)  # re-enable automatically when condition clears
+    auto_enabled_at = db.Column(db.DateTime)            # timestamp of last auto-enable
     notify_interval = db.Column(db.Integer, default=3600)  # secs between repeat alerts
     # Runtime state — updated by watchdog
     current_value = db.Column(db.Float)

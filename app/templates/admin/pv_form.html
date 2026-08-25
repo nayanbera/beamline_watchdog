@@ -125,6 +125,17 @@
                   {{ 'checked' if pv.enabled is not false }}>
                 <label class="form-check-label" for="enabled">Enable monitoring for this PV</label>
               </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="auto_enable" id="auto_enable"
+                  {{ 'checked' if pv.auto_enable }}>
+                <label class="form-check-label" for="auto_enable">
+                  Auto-enable when alarm condition clears
+                  <small class="text-muted d-block">
+                    When disabled, the watchdog will still read this PV in the background and
+                    re-enable it automatically once the alarm condition is no longer met.
+                  </small>
+                </label>
+              </div>
             </div>
 
           </div><!-- row -->
