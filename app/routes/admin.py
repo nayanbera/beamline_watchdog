@@ -640,7 +640,11 @@ def bulk_update():
         if change_email and hasattr(item, 'email_list_id'):
             item.email_list_id = int(email_val) if email_val else None
         if change_enabled:
-            item.enabled = (enabled_val == '1')
+            if enabled_val == 'auto':
+                if hasattr(item, 'auto_enable'):
+                    item.auto_enable = True
+            else:
+                item.enabled = (enabled_val == '1')
     db.session.commit()
     flash(f'Updated {len(items)} item(s).', 'success')
     return redirect(url_for(REDIRECT_MAP[item_type]))

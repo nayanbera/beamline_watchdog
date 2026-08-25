@@ -51,10 +51,11 @@
           <option value="{{ el.id }}">{{ el.name }}</option>
           {% endfor %}
         </select>
-        <select name="enabled" class="form-select form-select-sm" style="width:155px">
+        <select name="enabled" class="form-select form-select-sm" style="width:175px">
           <option value="">— enabled unchanged —</option>
           <option value="1">Enable all</option>
           <option value="0">Disable all</option>
+          <option value="auto">Auto-enable all</option>
         </select>
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-check2-all"></i> Apply
