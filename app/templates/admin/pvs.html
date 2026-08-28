@@ -198,16 +198,23 @@ document.getElementById('pv-search').addEventListener('input', function () {
   document.querySelectorAll('#pv-table tbody tr[data-search]').forEach(row => {
     const match = !q || row.dataset.search.toLowerCase().includes(q);
     row.style.display = match ? '' : 'none';
+    if (!match) row.querySelector('.row-check').checked = false; // deselect hidden rows
     if (match) shown++;
   });
   document.getElementById('no-results').style.display = shown === 0 && q ? '' : 'none';
+  updateBulkBar();
 });
 
+function visibleChecks() {
+  // Only rows that are not hidden by the search filter
+  return document.querySelectorAll('#pv-table tbody tr:not([style*="none"]) .row-check');
+}
+
 function updateBulkBar() {
-  const checked = document.querySelectorAll('.row-check:checked');
-  const all     = document.querySelectorAll('.row-check');
+  const all     = visibleChecks();
+  const checked = Array.from(all).filter(c => c.checked);
   document.getElementById('bulk-count').textContent = checked.length;
-  document.getElementById('bulk-ids').value = Array.from(checked).map(c => c.value).join(',');
+  document.getElementById('bulk-ids').value = checked.map(c => c.value).join(',');
   document.getElementById('bulk-bar').classList.toggle('d-none', checked.length === 0);
   const sa = document.getElementById('select-all');
   sa.checked = checked.length === all.length && all.length > 0;
@@ -215,7 +222,7 @@ function updateBulkBar() {
 }
 
 function toggleAll(cb) {
-  document.querySelectorAll('.row-check').forEach(c => c.checked = cb.checked);
+  visibleChecks().forEach(c => c.checked = cb.checked);
   updateBulkBar();
 }
 
