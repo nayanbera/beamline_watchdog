@@ -625,6 +625,24 @@ def bulk_update():
     email_val, change_email   = _parse('email_list_id')
     enabled_val, change_enabled = _parse('enabled')
 
+    cond_op = request.form.get('condition_op', '').strip()
+    cond_val_raw  = request.form.get('condition_value', '').strip()
+    cond_val2_raw = request.form.get('condition_value2', '').strip()
+    change_condition = bool(cond_op and item_type == 'pv')
+    if change_condition:
+        try:
+            cond_value = float(cond_val_raw)
+        except (ValueError, TypeError):
+            flash('Alarm condition requires a numeric threshold value.', 'danger')
+            return redirect(url_for('admin.pvs'))
+        cond_value2 = None
+        if cond_op in ('in_range', 'out_range'):
+            try:
+                cond_value2 = float(cond_val2_raw)
+            except (ValueError, TypeError):
+                flash('Range condition requires a second threshold value (v2).', 'danger')
+                return redirect(url_for('admin.pvs'))
+
     MODEL_MAP = {'pv': PVMonitor, 'process': ProcessMonitor, 'rule': CompoundRule}
     REDIRECT_MAP = {'pv': 'admin.pvs', 'process': 'admin.processes', 'rule': 'admin.rules'}
 
@@ -645,6 +663,10 @@ def bulk_update():
                     item.auto_enable = True
             else:
                 item.enabled = (enabled_val == '1')
+        if change_condition and hasattr(item, 'condition_op'):
+            item.condition_op    = cond_op
+            item.condition_value  = cond_value
+            item.condition_value2 = cond_value2
     db.session.commit()
     flash(f'Updated {len(items)} item(s).', 'success')
     return redirect(url_for(REDIRECT_MAP[item_type]))

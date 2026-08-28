@@ -57,6 +57,27 @@
           <option value="0">Disable all</option>
           <option value="auto">Auto-enable all</option>
         </select>
+        <div class="d-flex align-items-center gap-1">
+          <select name="condition_op" id="bulk-condition-op"
+                  class="form-select form-select-sm" style="width:160px"
+                  onchange="toggleBulkRange()">
+            <option value="">— condition unchanged —</option>
+            <option value=">">&gt; (above)</option>
+            <option value="<">&lt; (below)</option>
+            <option value=">=">&ge;</option>
+            <option value="<=">&le;</option>
+            <option value="==">= (exact)</option>
+            <option value="!=">≠</option>
+            <option value="in_range">in range [v1, v2]</option>
+            <option value="out_range">outside range [v1, v2]</option>
+          </select>
+          <input type="number" name="condition_value" id="bulk-threshold"
+                 class="form-control form-control-sm" style="width:90px"
+                 placeholder="threshold" step="any">
+          <input type="number" name="condition_value2" id="bulk-threshold2"
+                 class="form-control form-control-sm d-none" style="width:90px"
+                 placeholder="v2" step="any">
+        </div>
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-check2-all"></i> Apply
         </button>
@@ -197,5 +218,17 @@ function clearSelection() {
   document.getElementById('select-all').checked = false;
   updateBulkBar();
 }
+
+function toggleBulkRange() {
+  const op = document.getElementById('bulk-condition-op').value;
+  const isRange = op === 'in_range' || op === 'out_range';
+  const t1 = document.getElementById('bulk-threshold');
+  const t2 = document.getElementById('bulk-threshold2');
+  t1.classList.toggle('d-none', op === '');
+  t2.classList.toggle('d-none', !isRange);
+  if (op === '') { t1.value = ''; t2.value = ''; }
+}
+// initialise visibility
+toggleBulkRange();
 </script>
 {% endblock %}
