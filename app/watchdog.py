@@ -218,7 +218,7 @@ def check_all_pvs(app):
         # --- Individual PVs ---
         pv_status_map = {}
 
-        for pv in PVMonitor.query.filter_by(enabled=True).all():
+        for pv in PVMonitor.query.all():
             try:
                 if EPICS_AVAILABLE:
                     raw = epics.caget(pv.pv_name, timeout=1.0)
@@ -231,25 +231,26 @@ def check_all_pvs(app):
                 if raw is None:
                     pv.current_value = None
                     pv.current_value_str = 'N/A'
-                    pv.status = 'DISCONNECTED'
-                    pv_status_map[pv.id] = 'DISCONNECTED'
+                    if pv.enabled:
+                        pv.status = 'DISCONNECTED'
+                        pv_status_map[pv.id] = 'DISCONNECTED'
 
-                    if pv.notify_on_disconnect and pv.email_list_id:
-                        ni = pv.notify_interval or default_notify_interval
-                        should = (prev != 'DISCONNECTED' or
-                                  pv.last_notified_disconnect is None or
-                                  (now - pv.last_notified_disconnect).total_seconds() >= ni)
-                        if should:
-                            elist = EmailList.query.get(pv.email_list_id)
-                            if elist:
-                                body = _pv_disconnect_body(pv)
-                                ok, err = send_notification_email(
-                                    elist.get_emails(),
-                                    f'[WATCHDOG DISCONNECTED] {pv.display_name}',
-                                    body, cfg)
-                                _log_notification(db, 'PV', pv.id, pv.pv_name,
-                                                  'DISCONNECTED', body, elist.get_emails(), ok, err)
-                                pv.last_notified_disconnect = now
+                        if pv.notify_on_disconnect and pv.email_list_id:
+                            ni = pv.notify_interval or default_notify_interval
+                            should = (prev != 'DISCONNECTED' or
+                                      pv.last_notified_disconnect is None or
+                                      (now - pv.last_notified_disconnect).total_seconds() >= ni)
+                            if should:
+                                elist = EmailList.query.get(pv.email_list_id)
+                                if elist:
+                                    body = _pv_disconnect_body(pv)
+                                    ok, err = send_notification_email(
+                                        elist.get_emails(),
+                                        f'[WATCHDOG DISCONNECTED] {pv.display_name}',
+                                        body, cfg)
+                                    _log_notification(db, 'PV', pv.id, pv.pv_name,
+                                                      'DISCONNECTED', body, elist.get_emails(), ok, err)
+                                    pv.last_notified_disconnect = now
                 else:
                     try:
                         fval = float(raw)
@@ -258,6 +259,9 @@ def check_all_pvs(app):
                     except (TypeError, ValueError):
                         pv.current_value = None
                         pv.current_value_str = str(raw)
+
+                    if not pv.enabled:
+                        continue  # value updated; skip alarm/notification for disabled PVs
 
                     alarm = is_in_alarm(raw, pv.condition_op,
                                         pv.condition_value, pv.condition_value2)
@@ -316,8 +320,9 @@ def check_all_pvs(app):
 
             except Exception as exc:
                 logger.exception('Error checking PV %s: %s', pv.pv_name, exc)
-                pv.status = 'ERROR'
-                pv_status_map[pv.id] = 'ERROR'
+                if pv.enabled:
+                    pv.status = 'ERROR'
+                    pv_status_map[pv.id] = 'ERROR'
 
         db.session.commit()
 
