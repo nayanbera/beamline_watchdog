@@ -10,9 +10,40 @@ from werkzeug.security import check_password_hash
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
-                      Recipient, CARRIERS, get_category_colors)
+                      Recipient, CARRIERS, get_category_colors, PVChangeHistory)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def _pv_snapshot(pv):
+    """Return a dict of all user-configurable PVMonitor fields."""
+    return {
+        'pv_name':             pv.pv_name,
+        'alias':               pv.alias,
+        'description':         pv.description,
+        'condition_op':        pv.condition_op,
+        'condition_value':     pv.condition_value,
+        'condition_value2':    pv.condition_value2,
+        'category_id':         pv.category_id,
+        'email_list_id':       pv.email_list_id,
+        'enabled':             pv.enabled,
+        'auto_enable':         pv.auto_enable,
+        'notify_flag':         pv.notify_flag,
+        'notify_on_disconnect': pv.notify_on_disconnect,
+        'notify_interval':     pv.notify_interval,
+    }
+
+
+def _record_pv_history(pv, old_snap, new_snap, change_type):
+    entry = PVChangeHistory(
+        pv_id=pv.id,
+        pv_name=pv.pv_name,
+        changed_by=current_user.username,
+        change_type=change_type,
+        old_values=json.dumps(old_snap),
+        new_values=json.dumps(new_snap),
+    )
+    db.session.add(entry)
 
 CONDITION_OPS = [
     ('>', 'value > threshold  (alarm when above)'),
@@ -163,6 +194,7 @@ def pv_form(pv_id=None):
     errors = {}
 
     if request.method == 'POST':
+        old_snap = _pv_snapshot(pv) if pv_id else None   # capture before any modification
         pv.pv_name = request.form.get('pv_name', '').strip()
         pv.alias = request.form.get('alias', '').strip() or None
         pv.description = request.form.get('description', '').strip() or None
@@ -208,6 +240,9 @@ def pv_form(pv_id=None):
         if not errors:
             if not pv_id:
                 db.session.add(pv)
+                db.session.flush()   # get pv.id before recording history
+            if old_snap is not None:
+                _record_pv_history(pv, old_snap, _pv_snapshot(pv), 'edit')
             db.session.commit()
             flash(f'PV "{pv.pv_name}" {"updated" if pv_id else "added"} successfully.', 'success')
             return redirect(url_for('admin.pvs'))
@@ -653,6 +688,7 @@ def bulk_update():
 
     items = model.query.filter(model.id.in_(ids)).all()
     for item in items:
+        old_snap = _pv_snapshot(item) if item_type == 'pv' else None
         if change_cat and hasattr(item, 'category_id'):
             item.category_id = int(cat_val) if cat_val else None
         if change_email and hasattr(item, 'email_list_id'):
@@ -664,9 +700,11 @@ def bulk_update():
             else:
                 item.enabled = (enabled_val == '1')
         if change_condition and hasattr(item, 'condition_op'):
-            item.condition_op    = cond_op
+            item.condition_op     = cond_op
             item.condition_value  = cond_value
             item.condition_value2 = cond_value2
+        if old_snap is not None:
+            _record_pv_history(item, old_snap, _pv_snapshot(item), 'bulk')
     db.session.commit()
     flash(f'Updated {len(items)} item(s).', 'success')
     return redirect(url_for(REDIRECT_MAP[item_type]))
@@ -986,3 +1024,50 @@ def recipient_delete(rec_id):
     db.session.commit()
     flash('Recipient removed.', 'success')
     return redirect(url_for('admin.recipients'))
+
+
+# ---------------------------------------------------------------------------
+# PV Change History
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/pv-history')
+@login_required
+def pv_history():
+    page = request.args.get('page', 1, type=int)
+    pv_filter = request.args.get('pv', '').strip()
+    q = PVChangeHistory.query.order_by(PVChangeHistory.changed_at.desc())
+    if pv_filter:
+        q = q.filter(PVChangeHistory.pv_name.ilike(f'%{pv_filter}%'))
+    pagination = q.paginate(page=page, per_page=50, error_out=False)
+    return render_template('admin/pv_history.html',
+                           entries=pagination.items,
+                           pagination=pagination,
+                           pv_filter=pv_filter)
+
+
+@admin_bp.route('/pv-history/<int:hist_id>/restore', methods=['POST'])
+@login_required
+def pv_history_restore(hist_id):
+    entry = PVChangeHistory.query.get_or_404(hist_id)
+    pv = PVMonitor.query.get(entry.pv_id)
+    if pv is None:
+        flash('Cannot restore: the PV no longer exists.', 'danger')
+        return redirect(url_for('admin.pv_history'))
+    old = json.loads(entry.old_values)
+    pre_snap = _pv_snapshot(pv)
+    pv.alias               = old.get('alias')
+    pv.description         = old.get('description')
+    pv.condition_op        = old['condition_op']
+    pv.condition_value     = old['condition_value']
+    pv.condition_value2    = old.get('condition_value2')
+    pv.category_id         = old.get('category_id')
+    pv.email_list_id       = old.get('email_list_id')
+    pv.enabled             = old['enabled']
+    pv.auto_enable         = old['auto_enable']
+    pv.notify_flag         = old['notify_flag']
+    pv.notify_on_disconnect = old['notify_on_disconnect']
+    pv.notify_interval     = old['notify_interval']
+    _record_pv_history(pv, pre_snap, _pv_snapshot(pv), 'restore')
+    db.session.commit()
+    flash(f'Restored "{pv.pv_name}" to its state from {entry.changed_at.strftime("%Y-%m-%d %H:%M:%S")}.', 'success')
+    return redirect(url_for('admin.pv_history'))

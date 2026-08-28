@@ -309,3 +309,19 @@ class SystemConfig(db.Model):
     value = db.Column(db.Text, default='')
     description = db.Column(db.String(500))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PVChangeHistory(db.Model):
+    """Snapshot of a PVMonitor's config before each change, enabling restore."""
+    __tablename__ = 'pv_change_history'
+    id          = db.Column(db.Integer, primary_key=True)
+    pv_id       = db.Column(db.Integer, db.ForeignKey('pv_monitors.id', ondelete='SET NULL'),
+                            nullable=True)
+    pv_name     = db.Column(db.String(255), nullable=False)   # denormalised — kept after delete
+    changed_by  = db.Column(db.String(80),  nullable=False)
+    changed_at  = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    change_type = db.Column(db.String(20),  nullable=False)   # 'edit' | 'bulk'
+    old_values  = db.Column(db.Text, nullable=False)          # JSON snapshot before change
+    new_values  = db.Column(db.Text, nullable=False)          # JSON snapshot after change
+
+    pv = db.relationship('PVMonitor', backref='change_history')

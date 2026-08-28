@@ -76,6 +76,14 @@ def _register_template_globals(app):
     def status_badge(status):
         return _STATUS_BADGE.get(status, 'bg-secondary')
 
+    @app.template_filter('fromjson')
+    def fromjson_filter(s):
+        import json as _json
+        try:
+            return _json.loads(s) if s else {}
+        except Exception:
+            return {}
+
     @app.context_processor
     def inject_globals():
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError

@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}PV Change History — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-clock-history"></i> PV Change History</h4>
+  <a href="{{ url_for('admin.pvs') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i> Back to PVs
+  </a>
+</div>
+
+<!-- Filter bar -->
+<form class="d-flex gap-2 mb-3" method="GET">
+  <input type="text" name="pv" value="{{ pv_filter }}"
+         class="form-control form-control-sm" style="width:260px" placeholder="Filter by PV name…">
+  <button type="submit" class="btn btn-outline-primary btn-sm">Filter</button>
+  {% if pv_filter %}
+  <a href="{{ url_for('admin.pv_history') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+  {% endif %}
+</form>
+
+{% if entries %}
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>When</th>
+          <th>PV</th>
+          <th>By</th>
+          <th>Type</th>
+          <th>Changes</th>
+          <th style="width:90px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        {% set old = e.old_values | fromjson %}
+        {% set new = e.new_values | fromjson %}
+        <tr>
+          <td class="text-nowrap small text-muted">{{ e.changed_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>
+            <span class="fw-semibold">{{ e.pv_name }}</span>
+            {% if e.pv is none %}
+            <span class="badge bg-secondary ms-1">deleted</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ e.changed_by }}</td>
+          <td>
+            {% if e.change_type == 'bulk' %}
+            <span class="badge bg-info text-dark">bulk</span>
+            {% elif e.change_type == 'restore' %}
+            <span class="badge bg-warning text-dark">restore</span>
+            {% else %}
+            <span class="badge bg-secondary">edit</span>
+            {% endif %}
+          </td>
+          <td class="small">
+            {% set changed = [] %}
+            {% for key in ['condition_op','condition_value','condition_value2',
+                           'enabled','auto_enable','notify_flag','category_id',
+                           'email_list_id','notify_interval','alias'] %}
+              {% if old.get(key) != new.get(key) %}
+                {% set _ = changed.append(key ~ ': ' ~ (old.get(key)|string) ~ ' → ' ~ (new.get(key)|string)) %}
+              {% endif %}
+            {% endfor %}
+            {% if changed %}
+              <ul class="mb-0 ps-3">
+                {% for c in changed %}<li>{{ c }}</li>{% endfor %}
+              </ul>
+            {% else %}
+              <span class="text-muted">no change</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if e.pv is not none %}
+            <form method="POST"
+                  action="{{ url_for('admin.pv_history_restore', hist_id=e.id) }}"
+                  onsubmit="return confirm('Restore {{ e.pv_name }} to its state from {{ e.changed_at.strftime('%Y-%m-%d %H:%M') }}?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-outline-warning btn-sm">
+                <i class="bi bi-arrow-counterclockwise"></i> Restore
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav class="mt-3">
+  <ul class="pagination pagination-sm justify-content-center mb-0">
+    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+      <a class="page-link" href="{{ url_for('admin.pv_history', page=pagination.prev_num, pv=pv_filter) }}">‹</a>
+    </li>
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+      <li class="page-item {{ 'active' if p == pagination.page }}">
+        <a class="page-link" href="{{ url_for('admin.pv_history', page=p, pv=pv_filter) }}">{{ p }}</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+      <a class="page-link" href="{{ url_for('admin.pv_history', page=pagination.next_num, pv=pv_filter) }}">›</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">No change history yet.</div>
+{% endif %}
+{% endblock %}
