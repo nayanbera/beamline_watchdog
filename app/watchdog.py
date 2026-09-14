@@ -298,7 +298,8 @@ def check_all_pvs(app):
                     elif alarm:
                         pv.status = 'ALARM'
                         pv_status_map[pv.id] = 'ALARM'
-                        pv.last_alarm = now
+                        if prev != 'ALARM':
+                            pv.last_alarm = now
 
                         if pv.notify_flag and pv.email_list_id:
                             ni = pv.notify_interval or default_notify_interval
