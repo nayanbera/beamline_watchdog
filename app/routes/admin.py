@@ -1069,5 +1069,14 @@ def pv_history_restore(hist_id):
     pv.notify_interval     = old['notify_interval']
     _record_pv_history(pv, pre_snap, _pv_snapshot(pv), 'restore')
     db.session.commit()
-    flash(f'Restored "{pv.pv_name}" to its state from {entry.changed_at.strftime("%Y-%m-%d %H:%M:%S")}.', 'success')
+    cfg = {c.key: c.value for c in SystemConfig.query.all()}
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    tz_name = cfg.get('timezone') or 'UTC'
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo('UTC')
+        tz_name = 'UTC'
+    ts = entry.changed_at.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+    flash(f'Restored "{pv.pv_name}" to its state from {ts} ({tz_name}).', 'success')
     return redirect(url_for('admin.pv_history'))

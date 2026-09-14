@@ -38,7 +38,7 @@
         {% set old = e.old_values | fromjson %}
         {% set new = e.new_values | fromjson %}
         <tr>
-          <td class="text-nowrap small text-muted">{{ e.changed_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="text-nowrap small text-muted">{{ localdt(e.changed_at) }}</td>
           <td>
             <span class="fw-semibold">{{ e.pv_name }}</span>
             {% if e.pv is none %}
@@ -76,7 +76,7 @@
             {% if e.pv is not none %}
             <form method="POST"
                   action="{{ url_for('admin.pv_history_restore', hist_id=e.id) }}"
-                  onsubmit="return confirm('Restore {{ e.pv_name }} to its state from {{ e.changed_at.strftime('%Y-%m-%d %H:%M') }}?')">
+                  onsubmit="return confirm('Restore {{ e.pv_name }} to its state from {{ localdt(e.changed_at, '%Y-%m-%d %H:%M') }}?')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-outline-warning btn-sm">
                 <i class="bi bi-arrow-counterclockwise"></i> Restore

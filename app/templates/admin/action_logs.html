@@ -30,7 +30,7 @@
       <tbody>
         {% for a in logs %}
         <tr>
-          <td class="small text-nowrap text-muted">{{ a.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="small text-nowrap text-muted">{{ localdt(a.timestamp) }}</td>
           <td class="small"><strong>{{ a.admin_username }}</strong></td>
           <td>
             <span class="badge

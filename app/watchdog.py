@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psutil
 
@@ -22,11 +23,23 @@ except ImportError:
 _scheduler = None
 
 
+def _local_now_str(cfg):
+    """Return current time formatted in the configured display timezone."""
+    tz_name = cfg.get('timezone') or 'UTC'
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo('UTC')
+        tz_name = 'UTC'
+    now = datetime.now(tz=ZoneInfo('UTC')).astimezone(tz)
+    return now.strftime(f'%Y-%m-%d %H:%M:%S {tz_name}')
+
+
 # ---------------------------------------------------------------------------
 # Message builders
 # ---------------------------------------------------------------------------
 
-def _pv_alarm_body(pv, value):
+def _pv_alarm_body(pv, value, now_str):
     return (
         f"EPICS PV Watchdog — ALARM\n"
         f"{'='*50}\n"
@@ -36,12 +49,12 @@ def _pv_alarm_body(pv, value):
         f"Current Value : {value}\n"
         f"Alarm Condition: {pv.condition_str}\n\n"
         f"Status : ALARM\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _pv_recovery_body(pv, value):
+def _pv_recovery_body(pv, value, now_str):
     return (
         f"EPICS PV Watchdog — RECOVERED\n"
         f"{'='*50}\n"
@@ -50,12 +63,12 @@ def _pv_recovery_body(pv, value):
         f"Current Value : {value}\n"
         f"Alarm Condition (no longer met): {pv.condition_str}\n\n"
         f"Status : RECOVERED\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _pv_disconnect_body(pv):
+def _pv_disconnect_body(pv, now_str):
     return (
         f"EPICS PV Watchdog — DISCONNECTED\n"
         f"{'='*50}\n"
@@ -64,12 +77,12 @@ def _pv_disconnect_body(pv):
         f"Description: {pv.description or 'N/A'}\n\n"
         f"The PV could not be reached (Channel Access timeout).\n\n"
         f"Status : DISCONNECTED\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _pv_reconnect_body(pv, value):
+def _pv_reconnect_body(pv, value, now_str):
     return (
         f"EPICS PV Watchdog — RECONNECTED\n"
         f"{'='*50}\n"
@@ -77,12 +90,12 @@ def _pv_reconnect_body(pv, value):
         f"Alias   : {pv.alias or 'N/A'}\n\n"
         f"Current Value : {value}\n\n"
         f"Status : RECONNECTED\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _rule_alarm_body(rule, pv_status_map):
+def _rule_alarm_body(rule, pv_status_map, now_str):
     from .models import PVMonitor
     expr = rule.get_expression()
     lines = []
@@ -101,18 +114,18 @@ def _rule_alarm_body(rule, pv_status_map):
         f"Logic       : {expr.get('logic', 'AND')}\n\n"
         f"PV Conditions:\n" + '\n'.join(lines) + "\n\n"
         f"Status : ALARM\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _rule_recovery_body(rule):
+def _rule_recovery_body(rule, now_str):
     return (
         f"EPICS PV Watchdog — RULE RECOVERED\n"
         f"{'='*50}\n"
         f"Rule   : {rule.name}\n\n"
         f"Status : RECOVERED\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
@@ -157,7 +170,7 @@ def _find_process(match_type, match_value):
     return False, None, None
 
 
-def _proc_stopped_body(pm):
+def _proc_stopped_body(pm, now_str):
     return (
         f"EPICS PV Watchdog — PROCESS STOPPED\n"
         f"{'='*50}\n"
@@ -166,19 +179,19 @@ def _proc_stopped_body(pm):
         f"Match Type  : {pm.match_type}\n"
         f"Match Value : {pm.match_value}\n\n"
         f"Status : STOPPED (process not found)\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
 
-def _proc_recovery_body(pm):
+def _proc_recovery_body(pm, now_str):
     return (
         f"EPICS PV Watchdog — PROCESS RECOVERED\n"
         f"{'='*50}\n"
         f"Process : {pm.name}\n"
         f"PID     : {pm.pid}\n\n"
         f"Status : RUNNING\n"
-        f"Time   : {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"Time   : {now_str}\n\n"
         f"This is an automated message from EPICS PV Watchdog.\n"
     )
 
@@ -214,6 +227,7 @@ def check_all_pvs(app):
         cfg = {c.key: c.value for c in SystemConfig.query.all()}
         default_notify_interval = int(cfg.get('default_notify_interval', 3600))
         now = datetime.utcnow()
+        now_str = _local_now_str(cfg)
 
         # --- Individual PVs ---
         pv_status_map = {}
@@ -243,7 +257,7 @@ def check_all_pvs(app):
                             if should:
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
-                                    body = _pv_disconnect_body(pv)
+                                    body = _pv_disconnect_body(pv, now_str)
                                     ok, err = send_notification_email(
                                         elist.get_emails(),
                                         f'[WATCHDOG DISCONNECTED] {pv.display_name}',
@@ -270,7 +284,7 @@ def check_all_pvs(app):
                     if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_id:
                         elist = EmailList.query.get(pv.email_list_id)
                         if elist:
-                            body = _pv_reconnect_body(pv, raw)
+                            body = _pv_reconnect_body(pv, raw, now_str)
                             ok, err = send_notification_email(
                                 elist.get_emails(),
                                 f'[WATCHDOG RECONNECTED] {pv.display_name}',
@@ -293,7 +307,7 @@ def check_all_pvs(app):
                             if should:
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
-                                    body = _pv_alarm_body(pv, raw)
+                                    body = _pv_alarm_body(pv, raw, now_str)
                                     ok, err = send_notification_email(
                                         elist.get_emails(),
                                         f'[WATCHDOG ALARM] {pv.display_name}',
@@ -308,7 +322,7 @@ def check_all_pvs(app):
                             if pv.notify_flag and pv.email_list_id:
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
-                                    body = _pv_recovery_body(pv, raw)
+                                    body = _pv_recovery_body(pv, raw, now_str)
                                     ok, err = send_notification_email(
                                         elist.get_emails(),
                                         f'[WATCHDOG RECOVERED] {pv.display_name}',
@@ -358,7 +372,7 @@ def check_all_pvs(app):
                             f"Current Value : {raw}\n"
                             f"Condition (no longer met): {pv.condition_str}\n\n"
                             f"The PV has been automatically re-enabled.\n"
-                            f"Time : {now.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                            f"Time : {now_str}\n"
                         )
                         _log_notification(db, 'PV', pv.id, pv.pv_name,
                                           'AUTO_ENABLED', body, [], True, None)
@@ -387,7 +401,7 @@ def check_all_pvs(app):
                         if should:
                             elist = EmailList.query.get(rule.email_list_id)
                             if elist:
-                                body = _rule_alarm_body(rule, pv_status_map)
+                                body = _rule_alarm_body(rule, pv_status_map, now_str)
                                 ok, err = send_notification_email(
                                     elist.get_emails(),
                                     f'[WATCHDOG RULE ALARM] {rule.name}',
@@ -400,7 +414,7 @@ def check_all_pvs(app):
                     if prev == 'ALARM' and rule.notify_flag and rule.email_list_id:
                         elist = EmailList.query.get(rule.email_list_id)
                         if elist:
-                            body = _rule_recovery_body(rule)
+                            body = _rule_recovery_body(rule, now_str)
                             ok, err = send_notification_email(
                                 elist.get_emails(),
                                 f'[WATCHDOG RULE RECOVERED] {rule.name}',
@@ -428,7 +442,7 @@ def check_all_pvs(app):
                     if prev == 'STOPPED' and pm.notify_flag and pm.email_list_id:
                         elist = EmailList.query.get(pm.email_list_id)
                         if elist:
-                            body = _proc_recovery_body(pm)
+                            body = _proc_recovery_body(pm, now_str)
                             ok, err = send_notification_email(
                                 elist.get_emails(),
                                 f'[WATCHDOG PROCESS RUNNING] {pm.name}',
@@ -447,7 +461,7 @@ def check_all_pvs(app):
                         if should:
                             elist = EmailList.query.get(pm.email_list_id)
                             if elist:
-                                body = _proc_stopped_body(pm)
+                                body = _proc_stopped_body(pm, now_str)
                                 ok, err = send_notification_email(
                                     elist.get_emails(),
                                     f'[WATCHDOG PROCESS STOPPED] {pm.name}',
