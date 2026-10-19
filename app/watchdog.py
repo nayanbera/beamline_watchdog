@@ -140,9 +140,29 @@ def _find_process(match_type, match_value):
     Returns (is_running: bool, pid: int|None, proc_name: str|None).
 
     match_type 'command': runs match_value as a shell command; exit code 0 → running.
+    match_type 'ping':    sends one ICMP echo to the host in match_value; reply → running.
     """
     import shlex
     import subprocess
+    import sys
+
+    if match_type == 'ping':
+        host = match_value.strip()
+        if not host or host.startswith('-') or any(c.isspace() for c in host):
+            logger.warning('Invalid ping host %r', match_value)
+            return False, None, None
+        # -W is milliseconds on macOS, seconds on Linux
+        wait = '2000' if sys.platform == 'darwin' else '2'
+        try:
+            result = subprocess.run(
+                ['ping', '-c', '1', '-W', wait, host],
+                capture_output=True,
+                timeout=5,
+            )
+            return result.returncode == 0, None, host
+        except Exception as exc:
+            logger.warning('Ping check failed for %r: %s', host, exc)
+            return False, None, None
 
     if match_type == 'command':
         try:

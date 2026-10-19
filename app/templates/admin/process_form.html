@@ -172,6 +172,7 @@ const hints = {
   name:    'Partial, case-insensitive match on the process name (e.g. softIoc, python3, caRepeater)',
   cmdline: 'Substring match on the full command line including arguments (e.g. /path/to/st.cmd)',
   command: 'Command to run; exit code 0 = running, non-zero = stopped (e.g. systemctl is-active archappl)',
+  ping:    'Hostname or IP address of the device; a ping reply = running (reachable), no reply = stopped (unreachable)',
 };
 function updateHint() {
   const t = document.getElementById('match_type').value;
@@ -180,6 +181,7 @@ function updateHint() {
     name:    'softIoc',
     cmdline: '/beamline/iocs/bl12/st.cmd',
     command: 'systemctl is-active archappl',
+    ping:    '192.168.1.50',
   };
   document.getElementById('match_value').placeholder = examples[t] || '';
 }

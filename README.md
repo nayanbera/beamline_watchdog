@@ -411,12 +411,23 @@ public dashboard.
 
 ## Monitoring Network Device Reachability
 
-A device can be monitored with a regular **Process** monitor using the `command` match type. The
-command runs on the server (`shlex.split`, no shell, 10 s timeout); exit code `0` means the device
-is up, anything else raises the alarm.
+Use a regular **Process** monitor with the **Ping host** match type. The watchdog sends one ICMP echo
+to the host on every check; a reply means reachable (shown as RUNNING), no reply raises the alarm
+(shown as STOPPED) and sends the usual email notifications.
 
 | Field | Value |
 |-------|-------|
+| Name | e.g. `Detector PC reachable` |
+| Match type | `Ping host` |
+| Match value | `192.168.1.50` (IP address or hostname) |
+
+The ping timeout flag is chosen automatically for the server OS (`-W` is seconds on Linux,
+milliseconds on macOS). Leave Start/Stop commands blank. Add one monitor per device.
+
+For a device that blocks ICMP, use the `Shell command` match type with a TCP check such as
+`nc -z -w 2 192.168.1.50 5064`.
+
+-------|-------|
 | Name | e.g. `Detector PC reachable` |
 | Match type | `command` |
 | Match value | `ping -c 1 -W 2 192.168.1.50` (Linux) |

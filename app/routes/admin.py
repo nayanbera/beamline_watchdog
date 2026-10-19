@@ -611,6 +611,7 @@ MATCH_TYPES = [
     ('name',    'Process name (partial, case-insensitive)'),
     ('cmdline', 'Command-line substring (full command including arguments)'),
     ('command', 'Shell command (exit code 0 = running, non-zero = stopped)'),
+    ('ping',    'Ping host (network device reachability; reply = running)'),
 ]
 
 
