@@ -32,6 +32,7 @@ A web-based EPICS PV and process watchdog. Monitors process variables against co
    - [First-time setup](#first-time-setup)
 3. [EPICS Configuration](#epics-configuration)
 4. [Process Control](#process-control)
+   - [Monitoring Network Device Reachability](#monitoring-network-device-reachability)
 5. [Auto-Enable](#auto-enable)
 6. [Compound Rules](#compound-rules)
 6. [Project Layout](#project-layout)
@@ -405,6 +406,29 @@ public dashboard.
 
 > **Important:** Do not monitor the Flask/Gunicorn process itself and assign a Stop command to it —
 > stopping it will take down the web interface. Use systemd to manage the server process instead.
+
+---
+
+## Monitoring Network Device Reachability
+
+A device can be monitored with a regular **Process** monitor using the `command` match type. The
+command runs on the server (`shlex.split`, no shell, 10 s timeout); exit code `0` means the device
+is up, anything else raises the alarm.
+
+| Field | Value |
+|-------|-------|
+| Name | e.g. `Detector PC reachable` |
+| Match type | `command` |
+| Match value | `ping -c 1 -W 2 192.168.1.50` (Linux) |
+
+The `-W` timeout unit differs by OS: **seconds on Linux**, **milliseconds on macOS**
+(`ping -c 1 -W 2000 192.168.1.50`). Use a hostname instead of an IP if DNS is reliable.
+
+Notes:
+- Leave Start/Stop commands blank — they make no sense for a remote device.
+- A dead host blocks the check for up to the ping timeout, so keep `-W` small.
+- Some devices block ICMP; for those, check a TCP port with a command such as
+  `nc -z -w 2 192.168.1.50 5064`.
 
 ---
 
