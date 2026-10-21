@@ -230,6 +230,7 @@
               <th>Process Name</th>
               <th>Match</th>
               <th>PID</th>
+              <th>Up / Down for</th>
               <th>Last Checked</th>
               <th>Last Stopped</th>
               {% if current_user.is_authenticated %}<th>Control</th>{% endif %}
@@ -256,6 +257,11 @@
                 <code class="ms-1">{{ pm.match_value }}</code>
               </td>
               <td class="small" id="proc-pid-{{ pm.id }}">{{ pm.pid if pm.pid else '—' }}</td>
+              <td class="small text-nowrap" id="proc-since-{{ pm.id }}">
+                {% if pm.enabled and pm.status in ('RUNNING', 'STOPPED') %}
+                  <span class="{{ 'text-success' if pm.status == 'RUNNING' else 'text-danger' }}">{{ 'Up' if pm.status == 'RUNNING' else 'Down' }} {{ pm.status_since | duration }}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
               <td class="small" id="proc-checked-{{ pm.id }}">
                 {{ localdt(pm.last_checked, '%H:%M:%S %Z') }}
               </td>
@@ -467,6 +473,10 @@ async function refresh() {
       }
       const pid = document.getElementById(`proc-pid-${p.id}`);
       if (pid) pid.textContent = p.pid || '—';
+      const since = document.getElementById(`proc-since-${p.id}`);
+      if (since) since.innerHTML = (p.enabled && (p.status === 'RUNNING' || p.status === 'STOPPED'))
+        ? `<span class="${p.status === 'RUNNING' ? 'text-success' : 'text-danger'}">${p.status === 'RUNNING' ? 'Up' : 'Down'} ${p.since}</span>`
+        : '<span class="text-muted">—</span>';
       const chk = document.getElementById(`proc-checked-${p.id}`);
       if (chk) chk.textContent = p.last_checked;
       const stp = document.getElementById(`proc-stopped-${p.id}`);

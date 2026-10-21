@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
+from .. import format_duration
 from ..models import PVMonitor, CompoundRule, ProcessMonitor, get_category_colors
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ def api_status():
             'pid': pm.pid,
             'last_checked': _fmt(pm.last_checked, tz, '%H:%M:%S %Z'),
             'last_stopped': _fmt(pm.last_stopped, tz, '%Y-%m-%d %H:%M:%S'),
+            'since': format_duration(pm.status_since),
         })
 
     enabled_statuses = [p['status'] for p in pv_data if p['enabled']]

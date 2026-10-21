@@ -491,8 +491,13 @@ def check_all_pvs(app):
                                                   'ALARM', body, elist.get_emails(), ok, err)
                                 pm.last_notified = now
 
+                if pm.status != prev or pm.status_since is None:
+                    pm.status_since = now
+
             except Exception as exc:
                 logger.exception('Error checking process %s: %s', pm.name, exc)
+                if pm.status != 'UNKNOWN':
+                    pm.status_since = now
                 pm.status = 'UNKNOWN'
 
         db.session.commit()

@@ -284,6 +284,7 @@ class ProcessMonitor(db.Model):
     pid = db.Column(db.Integer)
     last_checked = db.Column(db.DateTime)
     last_stopped = db.Column(db.DateTime)
+    status_since = db.Column(db.DateTime)  # when the current status began
     last_notified = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

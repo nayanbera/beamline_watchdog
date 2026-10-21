@@ -700,6 +700,8 @@ def bulk_update():
                     item.auto_enable = True
             else:
                 item.enabled = (enabled_val == '1')
+                if item.enabled and hasattr(item, 'status_since'):
+                    item.status_since = None
         if change_condition and hasattr(item, 'condition_op'):
             item.condition_op     = cond_op
             item.condition_value  = cond_value
@@ -729,7 +731,10 @@ def process_form(proc_id=None):
         pm.stop_command = request.form.get('stop_command', '').strip() or None
         pm.working_dir = request.form.get('working_dir', '').strip() or None
         pm.notify_flag = 'notify_flag' in request.form
+        was_enabled = pm.enabled
         pm.enabled = 'enabled' in request.form
+        if pm.enabled and was_enabled is False:
+            pm.status_since = None
         cat_id = request.form.get('category_id', '')
         pm.category_id = int(cat_id) if cat_id else None
 
@@ -775,6 +780,8 @@ def process_delete(proc_id):
 def process_toggle(proc_id):
     pm = ProcessMonitor.query.get_or_404(proc_id)
     pm.enabled = not pm.enabled
+    if pm.enabled:
+        pm.status_since = None  # restart the up/down timer on the next check
     db.session.commit()
     flash(f'Process monitor "{pm.name}" {"enabled" if pm.enabled else "disabled"}.', 'info')
     return redirect(url_for('admin.processes'))

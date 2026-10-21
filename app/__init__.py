@@ -63,6 +63,24 @@ def create_app():
     return app
 
 
+def format_duration(since):
+    """Human-readable time elapsed since a naive-UTC datetime, e.g. '3d 4h', '2h 15m', '45s'."""
+    from datetime import datetime
+    if since is None:
+        return '—'
+    secs = max(int((datetime.utcnow() - since).total_seconds()), 0)
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    if days:
+        return f'{days}d {hours}h'
+    if hours:
+        return f'{hours}h {mins}m'
+    if mins:
+        return f'{mins}m {secs}s'
+    return f'{secs}s'
+
+
 def _register_template_globals(app):
     _STATUS_BADGE = {
         'OK':           'bg-success',
@@ -75,6 +93,10 @@ def _register_template_globals(app):
     @app.template_global()
     def status_badge(status):
         return _STATUS_BADGE.get(status, 'bg-secondary')
+
+    @app.template_filter('duration')
+    def duration_filter(dt):
+        return format_duration(dt)
 
     @app.template_filter('fromjson')
     def fromjson_filter(s):
@@ -116,6 +138,8 @@ def _run_migrations():
         for col in ('start_command', 'stop_command', 'working_dir'):
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE process_monitors ADD COLUMN {col} TEXT'))
+        if 'status_since' not in existing:
+            conn.execute(text('ALTER TABLE process_monitors ADD COLUMN status_since DATETIME'))
 
         result = conn.execute(text("PRAGMA table_info(pv_monitors)"))
         existing = {row[1] for row in result}
