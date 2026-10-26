@@ -507,12 +507,21 @@ def settings():
 # Notification log
 # ---------------------------------------------------------------------------
 
-def _filtered_logs(source_filter, status_filter):
+def _filtered_logs(source_filter, status_filter, q=''):
     query = NotificationLog.query.order_by(NotificationLog.timestamp.desc())
     if source_filter:
         query = query.filter_by(source_type=source_filter)
     if status_filter:
         query = query.filter_by(event_status=status_filter)
+    if q:
+        # case-insensitive substring match; escape LIKE wildcards in the user's text
+        like = '%' + q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        query = query.filter(db.or_(*[
+            col.ilike(like, escape='\\') for col in (
+                NotificationLog.source_name, NotificationLog.source_type,
+                NotificationLog.event_status, NotificationLog.message,
+                NotificationLog._recipients, NotificationLog.error_message)
+        ]))
     return query
 
 
@@ -523,6 +532,7 @@ def logs_download():
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     source_filter = request.args.get('source', '')
     status_filter = request.args.get('status', '')
+    q = request.args.get('q', '').strip()
 
     row = SystemConfig.query.filter_by(key='timezone').first()
     tz_name = (row.value if row and row.value else 'UTC')
@@ -535,9 +545,10 @@ def logs_download():
         return dt.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
 
     lines = [f'Notification log (times in {tz_name}, most recent first)',
-             f'Filters: source={source_filter or "all"}, event={status_filter or "all"}',
+             f'Filters: source={source_filter or "all"}, event={status_filter or "all"}, '
+             f'search={q or "none"}',
              '']
-    for log in _filtered_logs(source_filter, status_filter).all():
+    for log in _filtered_logs(source_filter, status_filter, q).all():
         sent = 'sent' if log.success else f'FAILED ({log.error_message or "unknown error"})'
         recipients = ', '.join(log.recipients) or '-'
         lines.append(f'{local(log.timestamp) if log.timestamp else "-"} | {log.source_type} | '
@@ -555,14 +566,15 @@ def logs():
     page = request.args.get('page', 1, type=int)
     source_filter = request.args.get('source', '')
     status_filter = request.args.get('status', '')
+    q = request.args.get('q', '').strip()
 
-    query = _filtered_logs(source_filter, status_filter)
+    query = _filtered_logs(source_filter, status_filter, q)
 
     pagination = query.paginate(page=page, per_page=50, error_out=False)
     return render_template('admin/logs.html', logs=pagination.items,
                            pagination=pagination,
                            source_filter=source_filter,
-                           status_filter=status_filter)
+                           status_filter=status_filter, q=q)
 
 
 # ---------------------------------------------------------------------------
