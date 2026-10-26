@@ -14,6 +14,7 @@
       <option value="">All Sources</option>
       <option value="PV"   {{ 'selected' if source_filter == 'PV' }}>PV</option>
       <option value="RULE" {{ 'selected' if source_filter == 'RULE' }}>Rule</option>
+      <option value="PROCESS" {{ 'selected' if source_filter == 'PROCESS' }}>Process</option>
     </select>
   </div>
   <div class="col-auto">
@@ -26,6 +27,10 @@
   <div class="col-auto">
     <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
     <a href="{{ url_for('admin.logs') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    <a href="{{ url_for('admin.logs_download', source=source_filter, status=status_filter) }}"
+       class="btn btn-sm btn-outline-primary" title="Download all entries matching the filters">
+      <i class="bi bi-download"></i> Save as .txt
+    </a>
   </div>
 </form>
 

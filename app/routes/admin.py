@@ -3,7 +3,7 @@ import shlex
 import subprocess
 from datetime import datetime
 from flask import (Blueprint, render_template, redirect, url_for,
-                   flash, request, abort)
+                   flash, request, abort, Response)
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 
@@ -507,6 +507,48 @@ def settings():
 # Notification log
 # ---------------------------------------------------------------------------
 
+def _filtered_logs(source_filter, status_filter):
+    query = NotificationLog.query.order_by(NotificationLog.timestamp.desc())
+    if source_filter:
+        query = query.filter_by(source_type=source_filter)
+    if status_filter:
+        query = query.filter_by(event_status=status_filter)
+    return query
+
+
+@admin_bp.route('/logs/download')
+@login_required
+def logs_download():
+    """Download every notification log entry matching the current filters as a .txt file."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    source_filter = request.args.get('source', '')
+    status_filter = request.args.get('status', '')
+
+    row = SystemConfig.query.filter_by(key='timezone').first()
+    tz_name = (row.value if row and row.value else 'UTC')
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz, tz_name = ZoneInfo('UTC'), 'UTC'
+
+    def local(dt):
+        return dt.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+
+    lines = [f'Notification log (times in {tz_name}, most recent first)',
+             f'Filters: source={source_filter or "all"}, event={status_filter or "all"}',
+             '']
+    for log in _filtered_logs(source_filter, status_filter).all():
+        sent = 'sent' if log.success else f'FAILED ({log.error_message or "unknown error"})'
+        recipients = ', '.join(log.recipients) or '-'
+        lines.append(f'{local(log.timestamp) if log.timestamp else "-"} | {log.source_type} | '
+                     f'{log.source_name} | {log.event_status} | {sent} | {recipients}')
+
+    stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    return Response('\n'.join(lines) + '\n', mimetype='text/plain',
+                    headers={'Content-Disposition':
+                             f'attachment; filename=watchdog_notifications_{stamp}.txt'})
+
+
 @admin_bp.route('/logs')
 @login_required
 def logs():
@@ -514,11 +556,7 @@ def logs():
     source_filter = request.args.get('source', '')
     status_filter = request.args.get('status', '')
 
-    query = NotificationLog.query.order_by(NotificationLog.timestamp.desc())
-    if source_filter:
-        query = query.filter_by(source_type=source_filter)
-    if status_filter:
-        query = query.filter_by(event_status=status_filter)
+    query = _filtered_logs(source_filter, status_filter)
 
     pagination = query.paginate(page=page, per_page=50, error_out=False)
     return render_template('admin/logs.html', logs=pagination.items,
