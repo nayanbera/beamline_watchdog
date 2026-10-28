@@ -478,6 +478,20 @@ self-activate.
   Enable / Disable toggle for that.
 - If `pyepics` / EPICS is not available, the auto-enable loop is skipped entirely.
 
+### Process monitors
+
+Process monitors (including **Ping host** device checks) have the same option. Edit the monitor,
+uncheck *Enable this monitor* if it should start disabled, and check *Auto-enable when the process
+is running again*.
+
+- While disabled, the watchdog still runs the check on every tick.
+- As soon as the process is running (or the device answers ping), the monitor is re-enabled,
+  its status becomes `RUNNING`, and email notifications resume.
+- The re-enable is recorded in the **Notification Log** as `AUTO_ENABLED` (source `PROCESS`).
+  No email is sent for the re-enable itself.
+- Disabled monitors with the option on show a cyan **AUTO** badge on the Processes page, and the
+  bulk action bar has an **Auto-enable all** choice.
+
 ---
 
 ## Compound Rules

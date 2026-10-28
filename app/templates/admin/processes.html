@@ -60,6 +60,7 @@
           <option value="">— enabled unchanged —</option>
           <option value="1">Enable all</option>
           <option value="0">Disable all</option>
+          <option value="auto">Auto-enable all</option>
         </select>
         <button type="submit" class="btn btn-primary btn-sm">
           <i class="bi bi-check2-all"></i> Apply
@@ -110,6 +111,9 @@
             </span>
             {% if not pm.enabled %}
               <span class="badge bg-light text-dark">DISABLED</span>
+              {% if pm.auto_enable %}
+                <span class="badge bg-info text-dark" title="Will auto-enable when the process is running again">AUTO</span>
+              {% endif %}
             {% endif %}
           </td>
           <td>

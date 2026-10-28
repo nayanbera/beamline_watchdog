@@ -138,8 +138,13 @@ def _run_migrations():
         for col in ('start_command', 'stop_command', 'working_dir'):
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE process_monitors ADD COLUMN {col} TEXT'))
-        if 'status_since' not in existing:
-            conn.execute(text('ALTER TABLE process_monitors ADD COLUMN status_since DATETIME'))
+        for col, typedef in [
+            ('status_since',    'DATETIME'),
+            ('auto_enable',     'INTEGER DEFAULT 0'),
+            ('auto_enabled_at', 'DATETIME'),
+        ]:
+            if col not in existing:
+                conn.execute(text(f'ALTER TABLE process_monitors ADD COLUMN {col} {typedef}'))
 
         result = conn.execute(text("PRAGMA table_info(pv_monitors)"))
         existing = {row[1] for row in result}

@@ -783,6 +783,7 @@ def process_form(proc_id=None):
         pm.notify_flag = 'notify_flag' in request.form
         was_enabled = pm.enabled
         pm.enabled = 'enabled' in request.form
+        pm.auto_enable = 'auto_enable' in request.form
         if pm.enabled and was_enabled is False:
             pm.status_since = None
         cat_id = request.form.get('category_id', '')

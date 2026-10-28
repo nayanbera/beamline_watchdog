@@ -502,6 +502,38 @@ def check_all_pvs(app):
 
         db.session.commit()
 
+        # --- Auto-enable disabled process monitors ---
+        # Monitors with auto_enable=True are still checked while disabled; once the
+        # process is running (or the device reachable) again they are re-enabled.
+        for pm in ProcessMonitor.query.filter_by(enabled=False, auto_enable=True).all():
+            try:
+                running, pid, _ = _find_process(pm.match_type, pm.match_value)
+                if not running:
+                    continue  # still down — leave disabled
+                pm.enabled = True
+                pm.status = 'RUNNING'
+                pm.pid = pid
+                pm.last_checked = now
+                pm.status_since = now
+                pm.auto_enabled_at = now
+                logger.info('Auto-enabled process monitor %s', pm.name)
+                body = (
+                    f"EPICS PV Watchdog — AUTO-ENABLED\n"
+                    f"{'='*50}\n"
+                    f"Process     : {pm.name}\n"
+                    f"Match Type  : {pm.match_type}\n"
+                    f"Match Value : {pm.match_value}\n\n"
+                    f"The process is running again and the monitor has been automatically re-enabled.\n"
+                    f"Time : {now_str}\n"
+                )
+                _log_notification(db, 'PROCESS', pm.id, pm.name,
+                                  'AUTO_ENABLED', body, [], True, None)
+            except Exception as exc:
+                logger.exception('Error during auto-enable check for process %s: %s',
+                                 pm.name, exc)
+
+        db.session.commit()
+
 
 # ---------------------------------------------------------------------------
 # Scheduler lifecycle

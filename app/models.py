@@ -285,6 +285,8 @@ class ProcessMonitor(db.Model):
     last_checked = db.Column(db.DateTime)
     last_stopped = db.Column(db.DateTime)
     status_since = db.Column(db.DateTime)  # when the current status began
+    auto_enable = db.Column(db.Boolean, default=False)  # re-enable automatically when running again
+    auto_enabled_at = db.Column(db.DateTime)            # timestamp of last auto-enable
     last_notified = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -148,6 +148,18 @@
                   {{ 'checked' if pm.enabled is not false }}>
                 <label class="form-check-label" for="enabled">Enable this monitor</label>
               </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="auto_enable" id="auto_enable"
+                  {{ 'checked' if pm.auto_enable }}>
+                <label class="form-check-label" for="auto_enable">
+                  Auto-enable when the process is running again
+                  <small class="text-muted d-block">
+                    When disabled, the watchdog still checks this monitor in the background and
+                    re-enables it (restoring monitoring and email notifications) once the process
+                    is running or the device is reachable.
+                  </small>
+                </label>
+              </div>
             </div>
 
           </div>
