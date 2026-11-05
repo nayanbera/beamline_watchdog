@@ -154,6 +154,10 @@ def _run_migrations():
             ('category_id',             'INTEGER REFERENCES categories(id)'),
             ('auto_enable',             'INTEGER DEFAULT 0'),
             ('auto_enabled_at',         'DATETIME'),
+            ('condition_clear_value',   'FLOAT'),
+            ('alarm_delay',             'INTEGER DEFAULT 0'),
+            ('clear_delay',             'INTEGER DEFAULT 0'),
+            ('pending_since',           'DATETIME'),
         ]:
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))

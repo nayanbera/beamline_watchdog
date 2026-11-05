@@ -7,8 +7,14 @@ be performed (disconnected / type error).
 """
 
 
-def is_in_alarm(value, operator, threshold, threshold2=None):
-    """Return True if PV value satisfies the alarm condition."""
+def is_in_alarm(value, operator, threshold, threshold2=None,
+                prev_alarm=False, clear_value=None):
+    """Return True if PV value satisfies the alarm condition.
+
+    Optional hysteresis: for the inequality operators (>, >=, <, <=), if
+    clear_value is set and the PV was previously in alarm (prev_alarm), the PV
+    stays in alarm until the value crosses clear_value in the recovery direction.
+    """
     if value is None:
         return None
     try:
@@ -16,6 +22,16 @@ def is_in_alarm(value, operator, threshold, threshold2=None):
         t1 = float(threshold)
     except (TypeError, ValueError):
         return None
+
+    if prev_alarm and clear_value is not None and operator in ('>', '>=', '<', '<='):
+        try:
+            tc = float(clear_value)
+        except (TypeError, ValueError):
+            tc = None
+        if tc is not None:
+            if operator in ('>', '>='):
+                return fv > tc
+            return fv < tc
 
     if operator == '>':
         return fv > t1

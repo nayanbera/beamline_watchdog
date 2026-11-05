@@ -58,6 +58,7 @@
           <td class="small">
             {% set changed = [] %}
             {% for key in ['condition_op','condition_value','condition_value2',
+                           'condition_clear_value','alarm_delay','clear_delay',
                            'enabled','auto_enable','notify_flag','category_id',
                            'email_list_id','notify_interval','alias'] %}
               {% if old.get(key) != new.get(key) %}

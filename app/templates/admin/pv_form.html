@@ -71,6 +71,34 @@
               {% endif %}
             </div>
 
+            <div class="col-md-4" id="clear-group" style="display:none">
+              <label class="form-label fw-semibold">Clear Threshold <small class="text-muted fw-normal">(optional)</small></label>
+              <input type="number" step="any" name="condition_clear_value"
+                class="form-control {{ 'is-invalid' if errors.get('condition_clear_value') }}"
+                value="{{ pv.condition_clear_value if pv.condition_clear_value is not none else '' }}"
+                placeholder="blank = clear at threshold">
+              {% if errors.get('condition_clear_value') %}
+                <div class="invalid-feedback">{{ errors.condition_clear_value }}</div>
+              {% endif %}
+              <small class="text-muted">Alarm stays active until the value crosses this.</small>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Alarm Delay (s)</label>
+              <input type="number" min="0" name="alarm_delay"
+                class="form-control {{ 'is-invalid' if errors.get('alarm_delay') }}"
+                value="{{ pv.alarm_delay or 0 }}">
+              <small class="text-muted">Condition must hold this long before alarming (0 = immediate).</small>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Clear Delay (s)</label>
+              <input type="number" min="0" name="clear_delay"
+                class="form-control {{ 'is-invalid' if errors.get('clear_delay') }}"
+                value="{{ pv.clear_delay or 0 }}">
+              <small class="text-muted">Recovery must hold this long before clearing (0 = immediate).</small>
+            </div>
+
             <div class="col-md-4">
               <label class="form-label fw-semibold">Category</label>
               <select name="category_id" class="form-select">
@@ -161,6 +189,8 @@ function toggleRange() {
   const rangeOps = ['in_range', 'out_range'];
   document.getElementById('threshold2-group').style.display =
     rangeOps.includes(op) ? 'block' : 'none';
+  document.getElementById('clear-group').style.display =
+    ['>', '>=', '<', '<='].includes(op) ? 'block' : 'none';
 }
 // Run on page load
 toggleRange();

@@ -265,6 +265,7 @@ def check_all_pvs(app):
                 if raw is None:
                     pv.current_value = None
                     pv.current_value_str = 'N/A'
+                    pv.pending_since = None
                     if pv.enabled:
                         pv.status = 'DISCONNECTED'
                         pv_status_map[pv.id] = 'DISCONNECTED'
@@ -298,7 +299,29 @@ def check_all_pvs(app):
                         continue  # value updated; skip alarm/notification for disabled PVs
 
                     alarm = is_in_alarm(raw, pv.condition_op,
-                                        pv.condition_value, pv.condition_value2)
+                                        pv.condition_value, pv.condition_value2,
+                                        prev_alarm=(prev == 'ALARM'),
+                                        clear_value=pv.condition_clear_value)
+
+                    # Time debounce: a state change must persist for
+                    # alarm_delay / clear_delay seconds before it takes effect.
+                    # While pending, the previous alarm/non-alarm state is held.
+                    if alarm is None:
+                        pv.pending_since = None
+                    else:
+                        was_alarm = (prev == 'ALARM')
+                        delay = ((pv.alarm_delay if alarm else pv.clear_delay) or 0)
+                        if alarm == was_alarm:
+                            pv.pending_since = None
+                        elif delay > 0:
+                            if pv.pending_since is None:
+                                pv.pending_since = now
+                            if (now - pv.pending_since).total_seconds() < delay:
+                                alarm = was_alarm  # hold previous state
+                            else:
+                                pv.pending_since = None
+                        else:
+                            pv.pending_since = None
 
                     # Reconnect notification (was disconnected, now readable)
                     if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_id:
@@ -371,7 +394,9 @@ def check_all_pvs(app):
                     if raw is None:
                         continue  # still disconnected — leave disabled
                     alarm = is_in_alarm(raw, pv.condition_op,
-                                        pv.condition_value, pv.condition_value2)
+                                        pv.condition_value, pv.condition_value2,
+                                        prev_alarm=True,
+                                        clear_value=pv.condition_clear_value)
                     if alarm is False:  # condition no longer met → re-enable
                         try:
                             fval = float(raw)

@@ -24,6 +24,9 @@ def _pv_snapshot(pv):
         'condition_op':        pv.condition_op,
         'condition_value':     pv.condition_value,
         'condition_value2':    pv.condition_value2,
+        'condition_clear_value': pv.condition_clear_value,
+        'alarm_delay':         pv.alarm_delay,
+        'clear_delay':         pv.clear_delay,
         'category_id':         pv.category_id,
         'email_list_id':       pv.email_list_id,
         'enabled':             pv.enabled,
@@ -219,6 +222,30 @@ def pv_form(pv_id=None):
                 errors['condition_value2'] = 'Must be a number.'
         else:
             pv.condition_value2 = None
+
+        cv = request.form.get('condition_clear_value', '').strip()
+        pv.condition_clear_value = None
+        if cv and pv.condition_op in ('>', '>=', '<', '<='):
+            try:
+                pv.condition_clear_value = float(cv)
+                if 'condition_value' not in errors:
+                    if pv.condition_op in ('>', '>=') and pv.condition_clear_value > pv.condition_value:
+                        errors['condition_clear_value'] = 'Must be ≤ the alarm threshold.'
+                    elif pv.condition_op in ('<', '<=') and pv.condition_clear_value < pv.condition_value:
+                        errors['condition_clear_value'] = 'Must be ≥ the alarm threshold.'
+            except ValueError:
+                errors['condition_clear_value'] = 'Must be a number.'
+
+        for field in ('alarm_delay', 'clear_delay'):
+            raw_d = request.form.get(field, '').strip()
+            try:
+                d = int(raw_d) if raw_d else 0
+                if d < 0:
+                    raise ValueError
+                setattr(pv, field, d)
+            except ValueError:
+                errors[field] = 'Must be a non-negative integer.'
+        pv.pending_since = None
 
         ni = request.form.get('notify_interval', '3600').strip()
         try:
@@ -1119,6 +1146,10 @@ def pv_history_restore(hist_id):
     pv.condition_op        = old['condition_op']
     pv.condition_value     = old['condition_value']
     pv.condition_value2    = old.get('condition_value2')
+    pv.condition_clear_value = old.get('condition_clear_value')
+    pv.alarm_delay         = old.get('alarm_delay', 0)
+    pv.clear_delay         = old.get('clear_delay', 0)
+    pv.pending_since       = None
     pv.category_id         = old.get('category_id')
     pv.email_list_id       = old.get('email_list_id')
     pv.enabled             = old['enabled']

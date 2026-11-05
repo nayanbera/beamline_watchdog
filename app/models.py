@@ -155,6 +155,13 @@ class PVMonitor(db.Model):
     condition_op = db.Column(db.String(20), nullable=False)
     condition_value = db.Column(db.Float, nullable=False)
     condition_value2 = db.Column(db.Float)           # used for in_range / out_range
+    # Optional hysteresis: once in alarm, stay in alarm until the value crosses
+    # clear_value (only for >, >=, <, <=). NULL = clear at the alarm threshold.
+    condition_clear_value = db.Column(db.Float)
+    # Optional time debounce (seconds the state change must persist). 0 = immediate.
+    alarm_delay = db.Column(db.Integer, default=0)
+    clear_delay = db.Column(db.Integer, default=0)
+    pending_since = db.Column(db.DateTime)  # runtime: when a pending transition began
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     category = db.relationship('Category', backref='pv_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
@@ -189,7 +196,15 @@ class PVMonitor(db.Model):
         op = labels.get(self.condition_op, self.condition_op)
         if self.condition_op in ('in_range', 'out_range') and self.condition_value2 is not None:
             return f"value {op} [{self.condition_value}, {self.condition_value2}]"
-        return f"value {op} {self.condition_value}"
+        s = f"value {op} {self.condition_value}"
+        if self.condition_clear_value is not None and self.condition_op in ('>', '<', '>=', '<='):
+            clr = '≤' if self.condition_op in ('>', '>=') else '≥'
+            s += f" (clears when value {clr} {self.condition_clear_value})"
+        if self.alarm_delay:
+            s += f", after {self.alarm_delay}s"
+        if self.clear_delay:
+            s += f", clears after {self.clear_delay}s"
+        return s
 
 
 class CompoundRule(db.Model):
