@@ -306,6 +306,54 @@ class ProcessMonitor(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class SoftIOC(db.Model):
+    """
+    An EPICS soft-IOC running on a (possibly remote) host.
+    Remote hosts are controlled over SSH (key-based auth); host 'localhost' runs locally.
+    Alarm = IOC process is NOT running.
+    """
+    __tablename__ = 'soft_iocs'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.String(500))
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+    category = db.relationship('Category', backref='soft_iocs')
+    # Where it runs
+    host = db.Column(db.String(255), nullable=False, default='localhost')
+    ssh_user = db.Column(db.String(100))        # blank = current user / ssh config default
+    ssh_port = db.Column(db.Integer)            # blank = 22 / ssh config default
+    working_dir = db.Column(db.String(500))     # cd here before start/stop/status commands
+    # Control
+    start_command = db.Column(db.String(1000))
+    stop_command = db.Column(db.String(1000))   # blank = pkill -f match_value
+    # Status: pgrep -f match_value, unless status_command is set (exit 0 = running)
+    match_value = db.Column(db.String(500), nullable=False)
+    status_command = db.Column(db.String(1000))
+    # Notifications / monitoring
+    notify_flag = db.Column(db.Boolean, default=True)
+    email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    email_list = db.relationship('EmailList', backref='soft_iocs',
+                                 foreign_keys=[email_list_id])
+    notify_interval = db.Column(db.Integer, default=3600)
+    enabled = db.Column(db.Boolean, default=True)
+    auto_enable = db.Column(db.Boolean, default=False)
+    auto_enabled_at = db.Column(db.DateTime)
+    # Runtime state — updated by watchdog
+    status = db.Column(db.String(20), default='UNKNOWN')  # RUNNING, STOPPED, UNREACHABLE, UNKNOWN
+    status_detail = db.Column(db.String(500))
+    last_checked = db.Column(db.DateTime)
+    last_stopped = db.Column(db.DateTime)
+    status_since = db.Column(db.DateTime)
+    last_notified = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def target(self):
+        user = f'{self.ssh_user}@' if self.ssh_user else ''
+        port = f':{self.ssh_port}' if self.ssh_port else ''
+        return f'{user}{self.host}{port}'
+
+
 class ActionLog(db.Model):
     """Audit log for admin-initiated process start/stop/kill actions."""
     __tablename__ = 'action_logs'

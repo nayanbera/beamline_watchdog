@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if ioc_id else 'Add' }} Soft IOC — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0">
+          <i class="bi bi-hdd-network"></i>
+          {{ 'Edit: ' + ioc.name if ioc_id else 'Add Soft IOC' }}
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" required autofocus
+                class="form-control {{ 'is-invalid' if errors.get('name') }}"
+                value="{{ ioc.name or '' }}" placeholder="e.g. Motors IOC — Hutch A">
+              {% if errors.get('name') %}<div class="invalid-feedback">{{ errors.name }}</div>{% endif %}
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" class="form-control"
+                value="{{ ioc.description or '' }}" placeholder="Optional description">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="category_id" class="form-select">
+                <option value="">— Uncategorized —</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {{ 'selected' if ioc.category_id == cat.id }}>{{ cat.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Host</h6></div>
+
+            <div class="col-12">
+              <div class="alert alert-light border py-2 mb-0">
+                <i class="bi bi-shield-lock text-primary"></i>
+                Remote hosts are reached with <code>ssh</code> from the watchdog server using
+                <strong>key-based login</strong> (no password prompts). Test it first from the
+                server account: <code>ssh user@host true</code>. Use <code>localhost</code> to run on
+                the watchdog machine itself.
+              </div>
+            </div>
+
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Host <span class="text-danger">*</span></label>
+              <input type="text" name="host"
+                class="form-control font-monospace {{ 'is-invalid' if errors.get('host') }}"
+                value="{{ ioc.host or 'localhost' }}" placeholder="ioc-host.beamline.local" required>
+              {% if errors.get('host') %}<div class="invalid-feedback">{{ errors.host }}</div>{% endif %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">SSH User</label>
+              <input type="text" name="ssh_user" class="form-control font-monospace"
+                value="{{ ioc.ssh_user or '' }}" placeholder="(default)">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">SSH Port</label>
+              <input type="number" name="ssh_port"
+                class="form-control {{ 'is-invalid' if errors.get('ssh_port') }}"
+                value="{{ ioc.ssh_port or '' }}" placeholder="22">
+              {% if errors.get('ssh_port') %}<div class="invalid-feedback">{{ errors.ssh_port }}</div>{% endif %}
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Working Directory</label>
+              <input type="text" name="working_dir" class="form-control font-monospace"
+                value="{{ ioc.working_dir or '' }}" placeholder="/epics/iocs/motors/iocBoot/iocmotors">
+              <small class="text-muted">On the IOC host. The commands below run after <code>cd</code> into it.</small>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Monitoring</h6></div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Process Match <span class="text-danger">*</span></label>
+              <input type="text" name="match_value"
+                class="form-control font-monospace {{ 'is-invalid' if errors.get('match_value') }}"
+                value="{{ ioc.match_value or '' }}" placeholder="st.cmd motors" required>
+              {% if errors.get('match_value') %}<div class="invalid-feedback">{{ errors.match_value }}</div>{% endif %}
+              <small class="text-muted">
+                Regex matched against full command lines on the host (<code>pgrep -f</code>).
+                Pick something unique to this IOC. Also used for the default Stop (<code>pkill -f</code>).
+              </small>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Custom Status Command <span class="badge bg-secondary fw-normal ms-1">optional</span></label>
+              <input type="text" name="status_command" class="form-control font-monospace"
+                value="{{ ioc.status_command or '' }}" placeholder="systemctl is-active motors-ioc">
+              <small class="text-muted">Overrides the process match: exit code 0 = running.</small>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Control Commands</h6></div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Start Command</label>
+              <input type="text" name="start_command" class="form-control font-monospace"
+                value="{{ ioc.start_command or '' }}" placeholder="./st.cmd   or   procServ -n motors 4001 ./st.cmd">
+              <small class="text-muted">Run detached on the host. Blank disables the Start/Restart buttons.</small>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Stop Command</label>
+              <input type="text" name="stop_command" class="form-control font-monospace"
+                value="{{ ioc.stop_command or '' }}" placeholder="(blank = pkill -f <process match>)">
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email List</label>
+              <select name="email_list_id" class="form-select">
+                <option value="">— No notification —</option>
+                {% for elist in email_lists %}
+                <option value="{{ elist.id }}" {{ 'selected' if ioc.email_list_id == elist.id }}>
+                  {{ elist.name }} ({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Repeat Notify (s)</label>
+              <input type="number" name="notify_interval" class="form-control"
+                value="{{ ioc.notify_interval or 3600 }}" min="60">
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end pb-1">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"
+                  {{ 'checked' if ioc.notify_flag is not false }}>
+                <label class="form-check-label" for="notify_flag">Enable notifications</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="enabled" id="enabled"
+                  {{ 'checked' if ioc.enabled is not false }}>
+                <label class="form-check-label" for="enabled">Enable this monitor</label>
+              </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="auto_enable" id="auto_enable"
+                  {{ 'checked' if ioc.auto_enable }}>
+                <label class="form-check-label" for="auto_enable">
+                  Auto-enable when the IOC is running again
+                  <small class="text-muted d-block">
+                    While paused, the IOC is still checked in the background and monitoring resumes
+                    once it is running.
+                  </small>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <hr>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if ioc_id else 'Add Soft IOC' }}
+            </button>
+            <a href="{{ url_for('admin.iocs') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

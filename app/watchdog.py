@@ -560,6 +560,102 @@ def check_all_pvs(app):
         db.session.commit()
 
 
+def _ioc_body(ioc, now_str, event):
+    head = {'ALARM': 'SOFT-IOC STOPPED', 'UNREACHABLE': 'SOFT-IOC HOST UNREACHABLE',
+            'RECOVERED': 'SOFT-IOC RECOVERED'}[event]
+    return (
+        f"EPICS PV Watchdog — {head}\n"
+        f"{'='*50}\n"
+        f"IOC         : {ioc.name}\n"
+        f"Host        : {ioc.target}\n"
+        f"Description : {ioc.description or 'N/A'}\n\n"
+        f"Status : {ioc.status}{' — ' + ioc.status_detail if ioc.status_detail else ''}\n"
+        f"Time   : {now_str}\n\n"
+        f"This is an automated message from EPICS PV Watchdog.\n"
+    )
+
+
+def check_iocs(app):
+    """Check every soft-IOC (SSH calls run in parallel). Called by APScheduler."""
+    from concurrent.futures import ThreadPoolExecutor
+    with app.app_context():
+        from . import db
+        from .models import SoftIOC, EmailList, SystemConfig
+        from .email_utils import send_notification_email
+        from .ioc_utils import check_ioc
+
+        cfg = {c.key: c.value for c in SystemConfig.query.all()}
+        default_notify_interval = int(cfg.get('default_notify_interval', 3600))
+        now = datetime.utcnow()
+        now_str = _local_now_str(cfg)
+
+        iocs = SoftIOC.query.filter(
+            (SoftIOC.enabled == True) | (SoftIOC.auto_enable == True)).all()  # noqa: E712
+        if not iocs:
+            return
+
+        def _check(ioc):
+            try:
+                return check_ioc(ioc)
+            except Exception as exc:
+                logger.exception('IOC check failed for %s', ioc.name)
+                return 'UNREACHABLE', str(exc)[:500]
+
+        with ThreadPoolExecutor(max_workers=min(8, len(iocs))) as pool:
+            results = list(pool.map(_check, iocs))
+
+        for ioc, (status, detail) in zip(iocs, results):
+            try:
+                if not ioc.enabled:
+                    # Auto-enable: only re-enable once the IOC is running again
+                    if status == 'RUNNING':
+                        ioc.enabled = True
+                        ioc.status, ioc.status_detail = status, None
+                        ioc.last_checked = ioc.status_since = ioc.auto_enabled_at = now
+                        _log_notification(db, 'IOC', ioc.id, ioc.name, 'AUTO_ENABLED',
+                                          f"Soft-IOC {ioc.name} is running again; monitor "
+                                          f"re-enabled at {now_str}.", [], True, None)
+                    continue
+
+                prev = ioc.status
+                ioc.last_checked = now
+                ioc.status, ioc.status_detail = status, detail
+                if status == 'STOPPED' and prev != 'STOPPED':
+                    ioc.last_stopped = now
+
+                event = None
+                if status == 'RUNNING':
+                    if prev in ('STOPPED', 'UNREACHABLE'):
+                        event = 'RECOVERED'
+                else:
+                    event = 'ALARM' if status == 'STOPPED' else 'UNREACHABLE'
+                    ni = ioc.notify_interval or default_notify_interval
+                    if not (prev != status or ioc.last_notified is None or
+                            (now - ioc.last_notified).total_seconds() >= ni):
+                        event = None
+                    elif event:
+                        ioc.last_notified = now
+
+                if event and ioc.notify_flag and ioc.email_list_id:
+                    elist = EmailList.query.get(ioc.email_list_id)
+                    if elist:
+                        body = _ioc_body(ioc, now_str, event)
+                        subject = {'ALARM': 'SOFT-IOC STOPPED',
+                                   'UNREACHABLE': 'SOFT-IOC HOST UNREACHABLE',
+                                   'RECOVERED': 'SOFT-IOC RUNNING'}[event]
+                        ok, err = send_notification_email(
+                            elist.get_emails(), f'[WATCHDOG {subject}] {ioc.name}', body, cfg)
+                        _log_notification(db, 'IOC', ioc.id, ioc.name, event, body,
+                                          elist.get_emails(), ok, err)
+
+                if ioc.status != prev or ioc.status_since is None:
+                    ioc.status_since = now
+            except Exception as exc:
+                logger.exception('Error processing IOC %s: %s', ioc.name, exc)
+
+        db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Scheduler lifecycle
 # ---------------------------------------------------------------------------
@@ -588,6 +684,16 @@ def start_watchdog(app):
         replace_existing=True,
         misfire_grace_time=interval,
     )
+    _scheduler.add_job(
+        func=check_iocs,
+        args=[app],
+        trigger='interval',
+        seconds=interval,
+        id='ioc_watchdog',
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=interval,
+    )
     _scheduler.start()
     logger.info('Watchdog started — check interval %ds', interval)
 
@@ -601,6 +707,7 @@ def restart_watchdog(app, new_interval):
     if _scheduler and _scheduler.running:
         try:
             _scheduler.reschedule_job('watchdog', trigger='interval', seconds=new_interval)
+            _scheduler.reschedule_job('ioc_watchdog', trigger='interval', seconds=new_interval)
             logger.info('Watchdog rescheduled to %ds', new_interval)
         except Exception as exc:
             logger.warning('reschedule_job failed (%s); watchdog keeps current interval', exc)

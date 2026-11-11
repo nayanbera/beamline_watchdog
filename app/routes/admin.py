@@ -10,7 +10,8 @@ from werkzeug.security import check_password_hash
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
-                      Recipient, CARRIERS, get_category_colors, PVChangeHistory)
+                      Recipient, CARRIERS, get_category_colors, PVChangeHistory, SoftIOC)
+from .. import ioc_utils
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -159,6 +160,8 @@ def category_delete(cat_id):
         pv.category_id = None
     for pm in cat.process_monitors:
         pm.category_id = None
+    for ioc in cat.soft_iocs:
+        ioc.category_id = None
     db.session.delete(cat)
     db.session.commit()
     flash(f'Category "{cat.name}" deleted. Monitors moved to Uncategorized.', 'warning')
@@ -756,8 +759,10 @@ def bulk_update():
                 flash('Range condition requires a second threshold value (v2).', 'danger')
                 return redirect(url_for('admin.pvs'))
 
-    MODEL_MAP = {'pv': PVMonitor, 'process': ProcessMonitor, 'rule': CompoundRule}
-    REDIRECT_MAP = {'pv': 'admin.pvs', 'process': 'admin.processes', 'rule': 'admin.rules'}
+    MODEL_MAP = {'pv': PVMonitor, 'process': ProcessMonitor, 'rule': CompoundRule,
+                 'ioc': SoftIOC}
+    REDIRECT_MAP = {'pv': 'admin.pvs', 'process': 'admin.processes', 'rule': 'admin.rules',
+                    'ioc': 'admin.iocs'}
 
     model = MODEL_MAP.get(item_type)
     if not model:
@@ -982,6 +987,153 @@ def process_kill(proc_id):
           'success' if success else 'danger')
     next_url = request.form.get('next') or url_for('admin.processes')
     return redirect(next_url)
+
+
+# ---------------------------------------------------------------------------
+# Soft-IOCs (local or remote over SSH)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route('/iocs')
+@login_required
+def iocs():
+    cat_filter = request.args.get('category', '')
+    categories = Category.query.order_by(Category.name).all()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
+    q = SoftIOC.query.order_by(SoftIOC.host, SoftIOC.name)
+    if cat_filter == '__none__':
+        q = q.filter(SoftIOC.category_id == None)
+    elif cat_filter:
+        q = q.join(Category).filter(Category.name == cat_filter)
+    recent_actions = (ActionLog.query.filter(ActionLog.process_name.like('[IOC] %'))
+                      .order_by(ActionLog.timestamp.desc()).limit(10).all())
+    return render_template('admin/iocs.html', iocs=q.all(),
+                           recent_actions=recent_actions,
+                           categories=categories, cat_filter=cat_filter,
+                           email_lists=email_lists,
+                           category_colors=get_category_colors())
+
+
+@admin_bp.route('/iocs/add', methods=['GET', 'POST'])
+@admin_bp.route('/iocs/<int:ioc_id>/edit', methods=['GET', 'POST'])
+@login_required
+def ioc_form(ioc_id=None):
+    ioc = SoftIOC.query.get_or_404(ioc_id) if ioc_id else SoftIOC()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
+    categories = Category.query.order_by(Category.name).all()
+    errors = {}
+
+    if request.method == 'POST':
+        f = request.form
+        ioc.name = f.get('name', '').strip()
+        ioc.description = f.get('description', '').strip() or None
+        ioc.host = f.get('host', '').strip() or 'localhost'
+        ioc.ssh_user = f.get('ssh_user', '').strip() or None
+        ioc.working_dir = f.get('working_dir', '').strip() or None
+        ioc.start_command = f.get('start_command', '').strip() or None
+        ioc.stop_command = f.get('stop_command', '').strip() or None
+        ioc.match_value = f.get('match_value', '').strip()
+        ioc.status_command = f.get('status_command', '').strip() or None
+        ioc.notify_flag = 'notify_flag' in f
+        was_enabled = ioc.enabled
+        ioc.enabled = 'enabled' in f
+        ioc.auto_enable = 'auto_enable' in f
+        if ioc.enabled and was_enabled is False:
+            ioc.status_since = None
+        ioc.category_id = int(f['category_id']) if f.get('category_id') else None
+        elist_id = f.get('email_list_id', '')
+        ioc.email_list_id = int(elist_id) if elist_id else None
+
+        try:
+            ioc.notify_interval = int(f.get('notify_interval', '3600').strip())
+        except ValueError:
+            ioc.notify_interval = 3600
+
+        port = f.get('ssh_port', '').strip()
+        ioc.ssh_port = None
+        if port:
+            try:
+                ioc.ssh_port = int(port)
+                if not 1 <= ioc.ssh_port <= 65535:
+                    raise ValueError
+            except ValueError:
+                errors['ssh_port'] = 'Must be a port number (1-65535).'
+
+        if not ioc.name:
+            errors['name'] = 'Name is required.'
+        if not ioc.match_value:
+            errors['match_value'] = 'Process match is required.'
+        if ioc.host.lower() not in ioc_utils.LOCAL_HOSTS and \
+                not ioc_utils.valid_host_fields(ioc.host, ioc.ssh_user):
+            errors['host'] = 'Invalid host or SSH user (letters, digits, . - _ : only).'
+
+        if not errors:
+            if not ioc_id:
+                db.session.add(ioc)
+            db.session.commit()
+            flash(f'Soft-IOC "{ioc.name}" {"updated" if ioc_id else "added"}.', 'success')
+            return redirect(url_for('admin.iocs'))
+
+    return render_template('admin/ioc_form.html', ioc=ioc, ioc_id=ioc_id,
+                           email_lists=email_lists, categories=categories, errors=errors)
+
+
+@admin_bp.route('/iocs/<int:ioc_id>/delete', methods=['POST'])
+@login_required
+def ioc_delete(ioc_id):
+    ioc = SoftIOC.query.get_or_404(ioc_id)
+    name = ioc.name
+    db.session.delete(ioc)
+    db.session.commit()
+    flash(f'Soft-IOC "{name}" deleted.', 'warning')
+    return redirect(url_for('admin.iocs'))
+
+
+@admin_bp.route('/iocs/<int:ioc_id>/toggle', methods=['POST'])
+@login_required
+def ioc_toggle(ioc_id):
+    ioc = SoftIOC.query.get_or_404(ioc_id)
+    ioc.enabled = not ioc.enabled
+    if ioc.enabled:
+        ioc.status_since = None
+    db.session.commit()
+    flash(f'Soft-IOC "{ioc.name}" monitor {"enabled" if ioc.enabled else "disabled"}.', 'info')
+    return redirect(url_for('admin.iocs'))
+
+
+def _log_ioc_action(ioc, action, command, success, output):
+    db.session.add(ActionLog(
+        admin_username=current_user.username, action=action,
+        process_id=ioc.id, process_name=f'[IOC] {ioc.name} @ {ioc.host}',
+        command=command or '', success=success, output=output))
+    db.session.commit()
+
+
+@admin_bp.route('/iocs/<int:ioc_id>/<action>', methods=['POST'])
+@login_required
+def ioc_control(ioc_id, action):
+    if action not in ('start', 'stop', 'restart'):
+        abort(404)
+    ioc = SoftIOC.query.get_or_404(ioc_id)
+    if action == 'start':
+        ok, out = ioc_utils.start_ioc(ioc)
+        _log_ioc_action(ioc, 'START', ioc.start_command, ok, out)
+    elif action == 'stop':
+        ok, out = ioc_utils.stop_ioc(ioc)
+        _log_ioc_action(ioc, 'STOP', ioc.stop_command or f'pkill -f {ioc.match_value}', ok, out)
+    else:
+        import time
+        ok, out = ioc_utils.stop_ioc(ioc)
+        _log_ioc_action(ioc, 'STOP', ioc.stop_command or f'pkill -f {ioc.match_value}', ok, out)
+        time.sleep(2)
+        ok2, out2 = ioc_utils.start_ioc(ioc)
+        _log_ioc_action(ioc, 'START', ioc.start_command, ok2, out2)
+        ok, out = ok2, f'stop: {out} | start: {out2}'
+    flash(f'{action.capitalize()} {"succeeded" if ok else "failed"}: {out}',
+          'success' if ok else 'danger')
+    nxt = request.form.get('next', '')
+    if not nxt.startswith('/') or nxt.startswith('//'):
+        nxt = url_for('admin.iocs')
+    return redirect(nxt)
 
 
 # ---------------------------------------------------------------------------

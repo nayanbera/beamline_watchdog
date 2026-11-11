@@ -409,6 +409,25 @@ public dashboard.
 
 ---
 
+## Soft IOCs (local and remote)
+
+The **Soft IOCs** tab starts, stops, restarts and monitors EPICS soft-IOCs on any host
+reachable over SSH. IOCs have categories, email lists, pause/auto-enable and bulk edit,
+exactly like PVs and processes. Use host `localhost` for IOCs on the watchdog machine.
+
+**Requirements:** the account running the watchdog must be able to `ssh user@host` with
+key-based login (no password prompt), e.g. `ssh-copy-id user@host`. Test with
+`ssh user@host true` first. Host keys of new hosts are accepted automatically on first use.
+
+Per IOC you configure: host / SSH user / port, working directory, a process-match regex
+(`pgrep -f`; or a custom status command where exit 0 = running), and optional start and
+stop commands (default stop is `pkill -f <match>`). Start commands are run detached, so
+`./st.cmd` or `procServ ...` both work.
+
+Statuses: `RUNNING`, `STOPPED` (process absent), `UNREACHABLE` (SSH failed or timed out —
+reported separately so a network problem isn't mistaken for a dead IOC). Email alerts are
+sent for stopped / unreachable / recovered, and start/stop actions appear in the Action Log.
+
 ## Monitoring Network Device Reachability
 
 Use a regular **Process** monitor with the **Ping host** match type. The watchdog sends one ICMP echo
