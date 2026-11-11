@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
 from .. import format_duration
-from ..models import PVMonitor, CompoundRule, ProcessMonitor, get_category_colors
+from ..models import PVMonitor, CompoundRule, ProcessMonitor, SoftIOC, get_category_colors
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ def index():
     pvs = PVMonitor.query.order_by(PVMonitor.pv_name).all()
     rules = CompoundRule.query.order_by(CompoundRule.name).all()
     processes = ProcessMonitor.query.order_by(ProcessMonitor.name).all()
+    iocs = SoftIOC.query.order_by(SoftIOC.name).all()
 
     enabled_statuses = [p.status for p in pvs if p.enabled]
     ok_count = enabled_statuses.count('OK')
@@ -52,7 +53,8 @@ def index():
     disc_count = sum(1 for s in enabled_statuses if s in ('DISCONNECTED', 'ERROR', 'UNKNOWN'))
     disabled_count = (sum(1 for p in pvs if not p.enabled) +
                       sum(1 for r in rules if not r.enabled) +
-                      sum(1 for pm in processes if not pm.enabled))
+                      sum(1 for pm in processes if not pm.enabled) +
+                      sum(1 for i in iocs if not i.enabled))
 
     tz = _display_tz()
     now_local = datetime.now(tz=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S %Z')
@@ -68,6 +70,7 @@ def index():
         'dashboard.html',
         pv_groups=_group_by_category(pvs),
         proc_groups=_group_by_category(processes),
+        ioc_groups=_group_by_category(iocs),
         rules=rules,
         ok_count=ok_count,
         alarm_count=alarm_count,
@@ -86,6 +89,7 @@ def api_status():
     pvs = PVMonitor.query.order_by(PVMonitor.pv_name).all()
     rules = CompoundRule.query.order_by(CompoundRule.name).all()
     processes = ProcessMonitor.query.order_by(ProcessMonitor.name).all()
+    iocs = SoftIOC.query.order_by(SoftIOC.name).all()
 
     tz = _display_tz()
 
@@ -129,10 +133,26 @@ def api_status():
             'since': format_duration(pm.status_since),
         })
 
+    ioc_data = []
+    for i in iocs:
+        ioc_data.append({
+            'id': i.id,
+            'name': i.name,
+            'host': i.target,
+            'category': i.category.name if i.category else '',
+            'status': i.status,
+            'status_detail': i.status_detail or '',
+            'enabled': i.enabled,
+            'last_checked': _fmt(i.last_checked, tz, '%H:%M:%S %Z'),
+            'last_stopped': _fmt(i.last_stopped, tz, '%Y-%m-%d %H:%M:%S'),
+            'since': format_duration(i.status_since),
+        })
+
     enabled_statuses = [p['status'] for p in pv_data if p['enabled']]
     disabled_count = (sum(1 for p in pv_data if not p['enabled']) +
                       sum(1 for r in rule_data if not r['enabled']) +
-                      sum(1 for pm in proc_data if not pm['enabled']))
+                      sum(1 for pm in proc_data if not pm['enabled']) +
+                      sum(1 for i in ioc_data if not i['enabled']))
 
     now_local = datetime.now(tz=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S %Z')
 
@@ -140,6 +160,7 @@ def api_status():
         'pvs': pv_data,
         'rules': rule_data,
         'processes': proc_data,
+        'iocs': ioc_data,
         'ok_count': enabled_statuses.count('OK'),
         'alarm_count': enabled_statuses.count('ALARM'),
         'disconnected_count': sum(1 for s in enabled_statuses if s not in ('OK', 'ALARM')),
