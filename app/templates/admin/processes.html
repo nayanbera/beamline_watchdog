@@ -282,12 +282,30 @@
 
 {% block scripts %}
 <script>
-document.getElementById('proc-search').addEventListener('input', function () {
-  const q = this.value.toLowerCase();
+const SEARCH_KEY = 'procSearch';
+function applySearch() {
+  const box = document.getElementById('proc-search');
+  const q = box.value.toLowerCase();
+  sessionStorage.setItem(SEARCH_KEY, box.value);
   document.querySelectorAll('tr[data-search]').forEach(row => {
     row.style.display = !q || row.dataset.search.toLowerCase().includes(q) ? '' : 'none';
   });
-});
+}
+document.getElementById('proc-search').addEventListener('input', applySearch);
+
+// Restore the filter after edit/pause/bulk redirects, but not on a manual page refresh
+(function () {
+  const nav = performance.getEntriesByType('navigation')[0];
+  if (nav && nav.type === 'reload') {
+    sessionStorage.removeItem(SEARCH_KEY);
+    return;
+  }
+  const saved = sessionStorage.getItem(SEARCH_KEY);
+  if (saved) {
+    document.getElementById('proc-search').value = saved;
+    applySearch();
+  }
+})();
 
 function updateBulkBar() {
   const checked = document.querySelectorAll('.row-check:checked');
