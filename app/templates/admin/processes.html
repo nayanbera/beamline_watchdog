@@ -21,7 +21,7 @@
   </div>
   <div class="col-md-4">
     <select id="cat-filter" class="form-select form-select-sm"
-            onchange="window.location=this.value">
+            onchange="sessionStorage.setItem(CAT_KEY, this.value); window.location=this.value">
       <option value="{{ url_for('admin.processes') }}"
         {{ 'selected' if not cat_filter }}>All categories</option>
       <option value="{{ url_for('admin.processes', category='__none__') }}"
@@ -282,6 +282,7 @@
 
 {% block scripts %}
 <script>
+const CAT_KEY = 'procCategory';
 const SEARCH_KEY = 'procSearch';
 function applySearch() {
   const box = document.getElementById('proc-search');
@@ -298,6 +299,14 @@ document.getElementById('proc-search').addEventListener('input', applySearch);
   const nav = performance.getEntriesByType('navigation')[0];
   if (nav && nav.type === 'reload') {
     sessionStorage.removeItem(SEARCH_KEY);
+    sessionStorage.removeItem(CAT_KEY);
+    return;
+  }
+  // Re-apply the category selection if an action redirected to the unfiltered list
+  const savedCat = sessionStorage.getItem(CAT_KEY);
+  if (savedCat && !new URLSearchParams(location.search).has('category')
+      && savedCat.includes('category=')) {
+    location.replace(savedCat);
     return;
   }
   const saved = sessionStorage.getItem(SEARCH_KEY);
