@@ -192,8 +192,11 @@
 
 {% block scripts %}
 <script>
-document.getElementById('pv-search').addEventListener('input', function () {
-  const q = this.value.toLowerCase();
+const SEARCH_KEY = 'pvSearch';
+function applySearch() {
+  const box = document.getElementById('pv-search');
+  const q = box.value.toLowerCase();
+  sessionStorage.setItem(SEARCH_KEY, box.value);
   let shown = 0;
   document.querySelectorAll('#pv-table tbody tr[data-search]').forEach(row => {
     const match = !q || row.dataset.search.toLowerCase().includes(q);
@@ -203,7 +206,22 @@ document.getElementById('pv-search').addEventListener('input', function () {
   });
   document.getElementById('no-results').style.display = shown === 0 && q ? '' : 'none';
   updateBulkBar();
-});
+}
+document.getElementById('pv-search').addEventListener('input', applySearch);
+
+// Restore the filter after edit/pause/bulk redirects, but not on a manual page refresh
+(function () {
+  const nav = performance.getEntriesByType('navigation')[0];
+  if (nav && nav.type === 'reload') {
+    sessionStorage.removeItem(SEARCH_KEY);
+    return;
+  }
+  const saved = sessionStorage.getItem(SEARCH_KEY);
+  if (saved) {
+    document.getElementById('pv-search').value = saved;
+    applySearch();
+  }
+})();
 
 function visibleChecks() {
   // Only rows that are not hidden by the search filter
