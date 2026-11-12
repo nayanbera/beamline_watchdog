@@ -25,15 +25,20 @@ def valid_host_fields(host, user):
     return True
 
 
-def ssh_env():
+def ssh_env(legacy=0):
     """
     Environment for the system ssh/ssh-keygen. The watchdog runs inside a conda env (and IOC start
     scripts may export LD_LIBRARY_PATH): if /usr/bin/ssh then loads conda's libcrypto/libssl instead of
     the system ones it can fail with "error in libcrypto". So strip the library overrides.
     """
-    return {k: v for k, v in os.environ.items()
-            if k not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT', 'OPENSSL_CONF', 'OPENSSL_MODULES',
-                         'PYTHONHOME', 'PYTHONPATH')}
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT', 'OPENSSL_CONF', 'OPENSSL_MODULES',
+                        'PYTHONHOME', 'PYTHONPATH')}
+    if legacy_level(legacy):
+        # RHEL/Fedora OpenSSL refuses SHA-1 signatures ("invalid digest ... error in libcrypto"), which an
+        # old host's ssh-rsa host key needs. This per-process switch re-enables them for this ssh only.
+        env['OPENSSL_ENABLE_SHA1_SIGNATURES'] = '1'
+    return env
 
 
 def _wrap(ioc, command):
@@ -103,7 +108,8 @@ def run_on_host(ioc, command, timeout=10):
                          legacy_level(getattr(ioc, 'ssh_legacy', 0)))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL, env=ssh_env() if argv[0] == 'ssh' else None)
+                           stdin=subprocess.DEVNULL,
+                           env=ssh_env(legacy_level(getattr(ioc, 'ssh_legacy', 0))) if argv[0] == 'ssh' else None)
         return r.returncode, (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
         return None, f'Timed out after {timeout} s.'
@@ -177,7 +183,8 @@ def _check_group(key, iocs):
         argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command, key[3])
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL, env=ssh_env() if argv[0] == 'ssh' else None)
+                           stdin=subprocess.DEVNULL,
+                           env=ssh_env(key[3]) if key is not None else None)
         out = (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
         return {i.id: ('UNREACHABLE', f'Timed out after {timeout} s.') for i in iocs}
@@ -359,7 +366,9 @@ def ssh_diagnose(host, user=None, port=None, legacy=0):
     except Exception as exc:
         lines.append(f'ssh binary : cannot run ssh ({exc})')
     lines.append('run as     : %s  HOME=%s' % (getpass.getuser(), os.path.expanduser('~')))
-    for k in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'OPENSSL_CONF', 'PATH'):
+    lines.append('SHA-1 sigs : OPENSSL_ENABLE_SHA1_SIGNATURES=1 is set for ssh in legacy mode: %s'
+                 % ('yes' if legacy_level(target.ssh_legacy) else 'no'))
+    for k in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'OPENSSL_CONF', 'OPENSSL_ENABLE_SHA1_SIGNATURES', 'PATH'):
         lines.append('%-11s: %s%s' % (k, os.environ.get(k, '(not set)'),
                                       '   [removed for ssh]' if k != 'PATH' and k in os.environ else ''))
     argv = _ssh_argv(target.host, target.ssh_user, target.ssh_port, 'true', target.ssh_legacy)
@@ -367,7 +376,7 @@ def ssh_diagnose(host, user=None, port=None, legacy=0):
     lines.append('command    : ' + ' '.join(shlex.quote(a) for a in argv))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL,
-                           env=ssh_env())
+                           env=ssh_env(target.ssh_legacy))
         tail = (r.stderr + r.stdout).strip().splitlines()[-25:]
         lines.append(f'exit code  : {r.returncode}')
         lines.append('--- last lines of ssh -vv ---')
@@ -436,7 +445,7 @@ def _install_once(target, pubkey, password):
         with os.fdopen(fd, 'w') as fh:
             fh.write('#!/bin/sh\nprintf \'%s\\n\' "$WD_SSH_PASS"\n')
         os.chmod(askpass, stat.S_IRWXU)
-        env = dict(ssh_env(), SSH_ASKPASS=askpass, SSH_ASKPASS_REQUIRE='force',
+        env = dict(ssh_env(target.ssh_legacy), SSH_ASKPASS=askpass, SSH_ASKPASS_REQUIRE='force',
                    DISPLAY=os.environ.get('DISPLAY') or ':0', WD_SSH_PASS=password)
         try:
             r = subprocess.run(argv, capture_output=True, text=True, timeout=25, env=env,
