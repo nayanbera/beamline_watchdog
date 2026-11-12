@@ -71,7 +71,10 @@ def _swap():
 def _disks():
     out, seen = [], set()
     for p in psutil.disk_partitions(all=False):
-        if p.device in seen or p.mountpoint.startswith(('/snap', '/var/lib/docker', '/run', '/System/Volumes', '/Volumes')):
+        # Read-only images (snap, ISO) are always 100% full by design; loop devices are those images.
+        if (p.device in seen or p.fstype in ('squashfs', 'iso9660', 'udf', 'erofs') or p.device.startswith('/dev/loop')
+                or p.mountpoint.startswith(('/snap', '/var/lib/snapd', '/var/lib/docker', '/run',
+                                            '/System/Volumes', '/Volumes'))):
             continue
         seen.add(p.device)
         try:
