@@ -443,6 +443,9 @@ public key into that account's `authorized_keys`, then verifies key login — th
 to `ssh` via `SSH_ASKPASS` for that single command and is never stored or logged) and **Show public
 key** for installing it by hand. The key used is the watchdog account's `~/.ssh/id_ed25519` (created
 if no key exists). Password SSH must be allowed on the remote host for the one-time install.
+The **IOCs** page also has an *SSH key login for remote hosts* card listing every remote host used by
+your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
+without opening an IOC form.
 
 **systemd:** if the watchdog runs as a systemd service (default `KillMode=control-group`), anything
 started on host `localhost` is part of the service's cgroup and is killed when the service restarts.

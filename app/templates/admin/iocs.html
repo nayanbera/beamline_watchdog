@@ -229,6 +229,41 @@
 </div>
 {% endmacro %}
 
+{% if ssh_hosts %}
+<div class="card mb-3" id="ssh-hosts-card">
+  <div class="card-header py-2 d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-key"></i> SSH key login for remote hosts</span>
+    <button type="button" class="btn btn-sm btn-outline-primary py-0" id="ssh-test-all">
+      <i class="bi bi-plug"></i> Test all
+    </button>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Host</th><th>SSH user</th><th>Port</th><th>IOCs</th><th>Key login</th><th></th></tr></thead>
+      <tbody>
+        {% for h in ssh_hosts %}
+        <tr class="ssh-host-row" data-host="{{ h.host }}" data-user="{{ h.user }}" data-port="{{ h.port }}">
+          <td>{{ h.host }}</td>
+          <td>{{ h.user or '(default)' }}</td>
+          <td>{{ h.port or 22 }}</td>
+          <td class="small text-muted">{{ h.iocs | join(', ') }}</td>
+          <td class="small ssh-state text-muted">not tested</td>
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary py-0 ssh-row-test">Test</button>
+            <button type="button" class="btn btn-sm btn-outline-success py-0 ssh-row-setup">Set up…</button>
+            <span class="input-group input-group-sm d-none ssh-row-pw" style="width:260px;margin-left:auto">
+              <input type="password" class="form-control" autocomplete="off" placeholder="Password (used once)">
+              <button type="button" class="btn btn-success ssh-row-install">Install key</button>
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {{ ioc_table(hard_iocs, true, 'Hard IOCs (monitor only)', 'bi-cpu') }}
 {{ ioc_table(soft_iocs, false, 'Soft IOCs (SSH-controlled)', 'bi-hdd-network') }}
 {% endblock %}
@@ -300,5 +335,45 @@ function clearSelection() {
   document.querySelectorAll('.row-check').forEach(c => c.checked = false);
   updateBulkBar();
 }
+</script>
+<script>
+(function () {
+  const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  async function post(row, url, extra) {
+    const body = new URLSearchParams({host: row.dataset.host, ssh_user: row.dataset.user,
+                                      ssh_port: row.dataset.port, ...(extra || {})});
+    const r = await fetch(url, {method: 'POST', body, headers: {'X-CSRFToken': csrf}});
+    if (!r.ok) throw new Error(r.status === 429 ? 'Too many attempts — wait a minute.' : 'HTTP ' + r.status);
+    return r.json();
+  }
+  function show(row, ok, text) {
+    const c = row.querySelector('.ssh-state');
+    c.className = 'small ssh-state ' + (ok ? 'text-success' : 'text-danger');
+    c.textContent = (ok ? '✔ ' : '✘ ') + text;
+  }
+  async function test(row) {
+    const c = row.querySelector('.ssh-state');
+    c.className = 'small ssh-state text-muted'; c.textContent = 'Testing…';
+    try { const d = await post(row, '/admin/iocs/ssh-test'); show(row, d.ok, d.message); }
+    catch (e) { show(row, false, e.message); }
+  }
+  document.querySelectorAll('.ssh-host-row').forEach(row => {
+    const box = row.querySelector('.ssh-row-pw'), pw = box && box.querySelector('input');
+    row.querySelector('.ssh-row-test').addEventListener('click', () => test(row));
+    row.querySelector('.ssh-row-setup').addEventListener('click', () => { box.classList.toggle('d-none'); pw.focus(); });
+    row.querySelector('.ssh-row-install').addEventListener('click', async () => {
+      const c = row.querySelector('.ssh-state');
+      c.className = 'small ssh-state text-muted'; c.textContent = 'Installing key…';
+      try {
+        const d = await post(row, '/admin/iocs/ssh-setup', {password: pw.value});
+        show(row, d.ok, d.message);
+        if (d.ok) box.classList.add('d-none');
+      } catch (e) { show(row, false, e.message); }
+      pw.value = '';
+    });
+  });
+  const all = document.getElementById('ssh-test-all');
+  if (all) all.addEventListener('click', () => document.querySelectorAll('.ssh-host-row').forEach(test));
+})();
 </script>
 {% endblock %}

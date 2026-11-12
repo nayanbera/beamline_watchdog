@@ -1010,7 +1010,14 @@ def iocs():
     recent_actions = (ActionLog.query.filter(ActionLog.process_name.like('[IOC] %'))
                       .order_by(ActionLog.timestamp.desc()).limit(10).all())
     items = q.all()
-    return render_template('admin/iocs.html', iocs=items,
+    ssh_hosts = {}
+    for i in SoftIOC.query.filter(SoftIOC.ioc_type != 'hard').all():
+        if i.host and i.host not in ioc_utils.LOCAL_HOSTS:
+            e = ssh_hosts.setdefault((i.host, i.ssh_user or '', i.ssh_port or ''), [])
+            e.append(i.name)
+    ssh_hosts = [dict(host=k[0], user=k[1], port=k[2], iocs=sorted(v))
+                 for k, v in sorted(ssh_hosts.items())]
+    return render_template('admin/iocs.html', iocs=items, ssh_hosts=ssh_hosts,
                            hard_iocs=[i for i in items if i.is_hard],
                            soft_iocs=[i for i in items if not i.is_hard],
                            recent_actions=recent_actions,
