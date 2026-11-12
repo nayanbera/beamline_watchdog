@@ -2,6 +2,7 @@
 import functools
 import getpass
 import logging
+import os
 import re
 import shlex
 import socket
@@ -24,6 +25,17 @@ def valid_host_fields(host, user):
     return True
 
 
+def ssh_env():
+    """
+    Environment for the system ssh/ssh-keygen. The watchdog runs inside a conda env (and IOC start
+    scripts may export LD_LIBRARY_PATH): if /usr/bin/ssh then loads conda's libcrypto/libssl instead of
+    the system ones it can fail with "error in libcrypto". So strip the library overrides.
+    """
+    return {k: v for k, v in os.environ.items()
+            if k not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT', 'OPENSSL_CONF', 'OPENSSL_MODULES',
+                         'PYTHONHOME', 'PYTHONPATH')}
+
+
 def _wrap(ioc, command):
     if ioc.working_dir:
         command = f'cd {shlex.quote(ioc.working_dir)} && {command}'
@@ -38,7 +50,7 @@ def _pubkey_opt():
     """OpenSSH 8.5 renamed PubkeyAcceptedKeyTypes to PubkeyAcceptedAlgorithms (the old name is a
     deprecated alias); use the name this client's version knows."""
     try:
-        r = subprocess.run(['ssh', '-V'], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(['ssh', '-V'], capture_output=True, text=True, timeout=5, env=ssh_env())
         m = re.search(r'OpenSSH_(\d+)\.(\d+)', r.stderr + r.stdout)
         if m and (int(m.group(1)), int(m.group(2))) >= (8, 5):
             return 'PubkeyAcceptedAlgorithms'
@@ -91,7 +103,7 @@ def run_on_host(ioc, command, timeout=10):
                          legacy_level(getattr(ioc, 'ssh_legacy', 0)))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL)
+                           stdin=subprocess.DEVNULL, env=ssh_env() if argv[0] == 'ssh' else None)
         return r.returncode, (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
         return None, f'Timed out after {timeout} s.'
@@ -165,7 +177,7 @@ def _check_group(key, iocs):
         argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command, key[3])
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL)
+                           stdin=subprocess.DEVNULL, env=ssh_env() if argv[0] == 'ssh' else None)
         out = (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
         return {i.id: ('UNREACHABLE', f'Timed out after {timeout} s.') for i in iocs}
@@ -356,7 +368,7 @@ def ensure_public_key(rsa=False):
         key = os.path.join(d, 'id_rsa' if rsa else 'id_ed25519')
         r = subprocess.run(['ssh-keygen', '-q', '-t', 'rsa' if rsa else 'ed25519'] +
                            (['-b', '3072'] if rsa else []) + ['-N', '', '-C', 'beamline-watchdog', '-f', key],
-                           capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+                           capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL, env=ssh_env())
         if r.returncode != 0:
             return None, (r.stderr or 'ssh-keygen failed').strip()
         with open(key + '.pub') as fh:
@@ -392,7 +404,7 @@ def _install_once(target, pubkey, password):
         with os.fdopen(fd, 'w') as fh:
             fh.write('#!/bin/sh\nprintf \'%s\\n\' "$WD_SSH_PASS"\n')
         os.chmod(askpass, stat.S_IRWXU)
-        env = dict(os.environ, SSH_ASKPASS=askpass, SSH_ASKPASS_REQUIRE='force',
+        env = dict(ssh_env(), SSH_ASKPASS=askpass, SSH_ASKPASS_REQUIRE='force',
                    DISPLAY=os.environ.get('DISPLAY') or ':0', WD_SSH_PASS=password)
         try:
             r = subprocess.run(argv, capture_output=True, text=True, timeout=25, env=env,
