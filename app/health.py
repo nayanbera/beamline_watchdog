@@ -90,7 +90,7 @@ def _failed_units(ignore):
     rc, out = _run(['systemctl', '--failed', '--no-legend', '--plain', '--no-pager'])
     if rc is None:
         return None
-    units = [ln.split()[0] for ln in out.splitlines() if ln.strip()]
+    units = [ln.lstrip('●* ').split()[0] for ln in out.splitlines() if ln.lstrip('●* ').strip()]
     ignored = [u for u in units if u in ignore]
     units = [u for u in units if u not in ignore]
     detail = ', '.join(units) if units else 'none'
