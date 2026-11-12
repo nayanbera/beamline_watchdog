@@ -1172,6 +1172,7 @@ def ioc_form(ioc_id=None):
         was_enabled = ioc.enabled
         ioc.enabled = 'enabled' in f
         ioc.auto_enable = 'auto_enable' in f
+        ioc.autostart = 'autostart' in f and not ioc.is_hard
         if ioc.enabled and was_enabled is False:
             ioc.status_since = None
         ioc.category_id = int(f['category_id']) if f.get('category_id') else None
@@ -1296,6 +1297,7 @@ def ioc_control(ioc_id, action):
     if ioc.is_hard:
         flash('Hard IOCs are monitor-only — they cannot be started or stopped here.', 'warning')
         return redirect(url_for('admin.iocs'))
+    ioc.user_stopped = action == 'stop'   # an intentional stop is never auto-started
     if action == 'start':
         ok, out = ioc_utils.start_ioc(ioc)
         _log_ioc_action(ioc, 'START', ioc.start_command, ok, out)

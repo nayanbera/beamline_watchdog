@@ -166,6 +166,21 @@
                 value="{{ ioc.stop_command or '' }}" placeholder="(blank = pkill -f <process match>)">
             </div>
 
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="autostart" id="autostart"
+                  {{ 'checked' if ioc.autostart }}>
+                <label class="form-check-label" for="autostart">
+                  Start automatically if it is not running
+                  <small class="text-muted d-block">
+                    After the watchdog computer reboots (or the watchdog restarts), or after the IOC's host
+                    comes back from being unreachable, the watchdog runs the Start command once if the IOC
+                    is found stopped. An IOC you stopped yourself from this page is never auto-started.
+                  </small>
+                </label>
+              </div>
+            </div>
+
             </div></div>
 
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>

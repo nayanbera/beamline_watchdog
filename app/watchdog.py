@@ -21,6 +21,7 @@ except ImportError:
     logger.warning('pyepics not installed — PV values will read as DISCONNECTED')
 
 _scheduler = None
+_autostart_seen = set()   # IOC ids already observed (reachable) since this process started
 
 
 def _local_now_str(cfg):
@@ -758,6 +759,7 @@ def check_iocs(app):
                 procs = dict(zip((i.id for i in soft), pool.map(_check, soft)))
         all_stats = _fetch_ioc_stats(iocs)
 
+        to_start = []
         for ioc in iocs:
             try:
                 hb_state, restarted = _apply_stats(ioc, all_stats.get(ioc.id), now) \
@@ -778,6 +780,12 @@ def check_iocs(app):
                 prev = ioc.status
                 ioc.last_checked = now
                 ioc.status, ioc.status_detail = status, detail
+                if not ioc.is_hard and status not in ('UNREACHABLE', 'UNKNOWN'):
+                    # Auto-start once: first sight since the watchdog started, or the host came back
+                    if (ioc.autostart and status == 'STOPPED' and not ioc.user_stopped and
+                            (ioc.id not in _autostart_seen or prev == 'UNREACHABLE')):
+                        to_start.append(ioc.id)
+                    _autostart_seen.add(ioc.id)
                 if status in ('STOPPED', 'HUNG', 'DISCONNECTED') and prev != status:
                     ioc.last_stopped = now
 
@@ -810,6 +818,33 @@ def check_iocs(app):
                 logger.exception('Error processing IOC %s: %s', ioc.name, exc)
 
         db.session.commit()
+
+        if to_start:
+            _autostart_iocs(db, to_start)
+
+
+def _autostart_iocs(db, ids):
+    from concurrent.futures import ThreadPoolExecutor
+    from .models import SoftIOC, ActionLog
+    from .ioc_utils import start_ioc
+    iocs = SoftIOC.query.filter(SoftIOC.id.in_(ids)).all()
+
+    def _start(ioc):
+        try:
+            return start_ioc(ioc)
+        except Exception as exc:
+            logger.exception('Auto-start failed for %s', ioc.name)
+            return False, str(exc)[:500]
+
+    with ThreadPoolExecutor(max_workers=min(4, len(iocs))) as pool:
+        results = list(pool.map(_start, iocs))
+    for ioc, (ok, out) in zip(iocs, results):
+        logger.info('Auto-start %s: %s', ioc.name, 'ok' if ok else 'FAILED')
+        db.session.add(ActionLog(
+            admin_username='watchdog (auto-start)', action='START', process_id=ioc.id,
+            process_name=f'[IOC] {ioc.name} @ {ioc.host}', command=ioc.start_command or '',
+            success=ok, output=out))
+    db.session.commit()
 
 
 # ---------------------------------------------------------------------------

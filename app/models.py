@@ -346,6 +346,8 @@ class SoftIOC(db.Model):
     enabled = db.Column(db.Boolean, default=True)
     auto_enable = db.Column(db.Boolean, default=False)
     auto_enabled_at = db.Column(db.DateTime)
+    autostart = db.Column(db.Boolean, default=False)    # start when found STOPPED after a watchdog/host restart
+    user_stopped = db.Column(db.Boolean, default=False)  # stopped from the UI → never auto-start
     # Runtime state — updated by watchdog
     status = db.Column(db.String(20), default='UNKNOWN')  # RUNNING, STOPPED, UNREACHABLE, UNKNOWN
     status_detail = db.Column(db.String(500))

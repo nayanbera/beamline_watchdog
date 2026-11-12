@@ -447,6 +447,15 @@ The **IOCs** page also has an *SSH key login for remote hosts* card listing ever
 your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
 without opening an IOC form.
 
+**Auto-start:** tick *Start automatically if it is not running* on a soft IOC and the watchdog runs its
+Start command once when it finds the IOC `STOPPED` (a) on its first check after the watchdog starts —
+e.g. after the server reboots — or (b) right after the IOC's host comes back from `UNREACHABLE`. Nothing
+is retried in a loop, HUNG IOCs are left alone, and an IOC you stopped yourself from the IOCs page is never
+auto-started (starting it again from the page clears that). Auto-starts appear in the Action Log as
+`watchdog (auto-start)`. For this to work after a reboot, the watchdog service must start on boot
+(`systemctl enable beamline-watchdog`) and the IOC host's sshd must be up (the watchdog retries via the
+UNREACHABLE → STOPPED transition).
+
 **systemd:** if the watchdog runs as a systemd service (default `KillMode=control-group`), anything
 started on host `localhost` is part of the service's cgroup and is killed when the service restarts.
 Give such IOCs the machine's own hostname (and an SSH user) so they start through `sshd` in a user
