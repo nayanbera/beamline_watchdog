@@ -759,6 +759,8 @@ def check_iocs(app):
         if soft:
             with ThreadPoolExecutor(max_workers=min(8, len(soft))) as pool:
                 procs = dict(zip((i.id for i in soft), pool.map(_check, soft)))
+        if _stopping.is_set():      # shutting down: don't record half-finished results
+            return
         all_stats = _fetch_ioc_stats(iocs)
 
         to_start = []
