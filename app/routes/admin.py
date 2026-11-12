@@ -1127,7 +1127,15 @@ def ioc_ssh_test():
     ok, msg, legacy = ioc_utils.ssh_test(request.form.get('host'), request.form.get('ssh_user'),
                                          request.form.get('ssh_port'), request.form.get('ssh_legacy'))
     _persist_legacy(legacy)
-    return jsonify(ok=ok, message=msg, legacy=legacy)
+    return jsonify(ok=ok, message=msg, legacy=legacy, diag=_diag(ok, msg, legacy))
+
+
+def _diag(ok, msg, legacy):
+    """Troubleshooting details for a crypto-library failure (shown under the result)."""
+    if ok or 'crypto library' not in (msg or ''):
+        return ''
+    f = request.form
+    return ioc_utils.ssh_diagnose(f.get('host'), f.get('ssh_user'), f.get('ssh_port'), legacy)
 
 
 def _persist_legacy(legacy):
@@ -1164,7 +1172,7 @@ def ioc_ssh_setup():
     _persist_legacy(legacy)
     logger.info('SSH key setup for %s@%s by %s: %s', request.form.get('ssh_user') or '(default)',
                 request.form.get('host'), current_user.username, 'ok' if ok else 'failed')
-    return jsonify(ok=ok, message=msg, legacy=legacy)
+    return jsonify(ok=ok, message=msg, legacy=legacy, diag=_diag(ok, msg, legacy))
 
 
 @admin_bp.route('/iocs/add', methods=['GET', 'POST'])

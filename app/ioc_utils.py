@@ -345,6 +345,38 @@ def ssh_test(host, user=None, port=None, legacy=0):
     return False, explain_ssh_error(out), level
 
 
+def ssh_diagnose(host, user=None, port=None, legacy=0):
+    """Details for troubleshooting an SSH failure as seen from inside the watchdog process."""
+    import getpass
+    import shutil
+    target, err = _ssh_target(host, user, port, legacy)
+    if err:
+        return err
+    lines = []
+    try:
+        v = subprocess.run(['ssh', '-V'], capture_output=True, text=True, timeout=5, env=ssh_env())
+        lines.append('ssh binary : %s  (%s)' % (shutil.which('ssh'), (v.stderr + v.stdout).strip()))
+    except Exception as exc:
+        lines.append(f'ssh binary : cannot run ssh ({exc})')
+    lines.append('run as     : %s  HOME=%s' % (getpass.getuser(), os.path.expanduser('~')))
+    for k in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'OPENSSL_CONF', 'PATH'):
+        lines.append('%-11s: %s%s' % (k, os.environ.get(k, '(not set)'),
+                                      '   [removed for ssh]' if k != 'PATH' and k in os.environ else ''))
+    argv = _ssh_argv(target.host, target.ssh_user, target.ssh_port, 'true', target.ssh_legacy)
+    argv.insert(1, '-vv')
+    lines.append('command    : ' + ' '.join(shlex.quote(a) for a in argv))
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL,
+                           env=ssh_env())
+        tail = (r.stderr + r.stdout).strip().splitlines()[-25:]
+        lines.append(f'exit code  : {r.returncode}')
+        lines.append('--- last lines of ssh -vv ---')
+        lines += tail
+    except Exception as exc:
+        lines.append(f'ssh -vv failed to run: {exc}')
+    return '\n'.join(lines)
+
+
 def _ssh_dir():
     import os
     return os.path.join(os.path.expanduser('~'), '.ssh')

@@ -22,6 +22,9 @@
       <span class="small" id="ssh-result"></span>
     </div>
 
+    <pre id="ssh-diag" class="small bg-white border rounded p-2 mt-2 mb-0 d-none"
+         style="white-space:pre-wrap;max-height:260px;overflow:auto"></pre>
+
     <div id="ssh-setup-panel" class="mt-2 d-none">
       <div class="small text-muted mb-1">
         Enter the remote account's password <em>once</em>. The watchdog uses it to install its public
@@ -61,7 +64,10 @@
     if (d.legacy) { legacyBox.checked = true; legacyBox.value = d.legacy; }   // old host detected: keep it for saving
     return d;
   }
-  function show(ok, text) {
+  const diag = document.getElementById('ssh-diag');
+  function show(ok, text, details) {
+    diag.textContent = details || '';
+    diag.classList.toggle('d-none', !details);
     result.className = 'small ' + (ok ? 'text-success' : 'text-danger');
     result.textContent = (ok ? '✔ ' : '✘ ') + text;
   }
@@ -69,7 +75,7 @@
 
   document.getElementById('ssh-test-btn').addEventListener('click', async () => {
     busy('Testing…');
-    try { const d = await post('/admin/iocs/ssh-test'); show(d.ok, d.message); }
+    try { const d = await post('/admin/iocs/ssh-test'); show(d.ok, d.message, d.diag); }
     catch (e) { show(false, e.message); }
   });
 
@@ -83,7 +89,7 @@
     busy('Installing key…');
     try {
       const d = await post('/admin/iocs/ssh-setup', {password: pw.value});
-      show(d.ok, d.message);
+      show(d.ok, d.message, d.diag);
       if (d.ok) document.getElementById('ssh-setup-panel').classList.add('d-none');
     } catch (e) { show(false, e.message); }
     pw.value = '';   // never keep the password around
