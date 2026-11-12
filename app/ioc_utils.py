@@ -33,12 +33,28 @@ def _wrap(ioc, command):
 # Extra algorithms for old sshd versions (e.g. only ssh-rsa/ssh-dss host keys, SHA-1 key exchange)
 # that current OpenSSH clients refuse by default. "+" appends to the defaults, so modern hosts still
 # negotiate the strong algorithms.
-LEGACY_LEVELS = {
-    1: ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa'],
-    2: ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa',
-        '-o', 'KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
-        '-o', 'Ciphers=+aes128-cbc,aes256-cbc'],
-}
+@functools.lru_cache(maxsize=1)
+def _pubkey_opt():
+    """OpenSSH 8.5 renamed PubkeyAcceptedKeyTypes to PubkeyAcceptedAlgorithms (the old name is a
+    deprecated alias); use the name this client's version knows."""
+    try:
+        r = subprocess.run(['ssh', '-V'], capture_output=True, text=True, timeout=5)
+        m = re.search(r'OpenSSH_(\d+)\.(\d+)', r.stderr + r.stdout)
+        if m and (int(m.group(1)), int(m.group(2))) >= (8, 5):
+            return 'PubkeyAcceptedAlgorithms'
+    except Exception:
+        pass
+    return 'PubkeyAcceptedKeyTypes'
+
+
+def _legacy_opts(level):
+    """Level 1: allow ssh-rsa (what `ssh -oHostKeyAlgorithms=+ssh-rsa -oPubkeyAcceptedAlgorithms=+ssh-rsa`
+    does). Level 2 adds SHA-1 key exchange and CBC ciphers."""
+    opts = ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', f'{_pubkey_opt()}=+ssh-rsa']
+    if level >= 2:
+        opts += ['-o', 'KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
+                 '-o', 'Ciphers=+aes128-cbc,aes256-cbc']
+    return opts
 
 
 def legacy_level(value):
@@ -53,7 +69,7 @@ def _ssh_argv(host, user, port, command, legacy=0):
     argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
             '-o', 'StrictHostKeyChecking=accept-new']
     if legacy_level(legacy):
-        argv += LEGACY_LEVELS[legacy_level(legacy)]
+        argv += _legacy_opts(legacy_level(legacy))
     if port:
         argv += ['-p', str(int(port))]
     return argv + [f'{user}@{host}' if user else host, '--', command]
@@ -366,7 +382,7 @@ def _install_once(target, pubkey, password):
             '-o', 'NumberOfPasswordPrompts=1', '-o', 'ConnectTimeout=8',
             '-o', 'StrictHostKeyChecking=accept-new']
     if target.ssh_legacy:
-        argv += LEGACY_LEVELS[target.ssh_legacy]
+        argv += _legacy_opts(target.ssh_legacy)
     if target.ssh_port:
         argv += ['-p', str(target.ssh_port)]
     argv += [dest, '--', remote]
