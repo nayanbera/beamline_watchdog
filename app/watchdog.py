@@ -728,12 +728,11 @@ def _ioc_body(ioc, now_str, event):
 
 def check_iocs(app):
     """Check every IOC: SSH/process state (soft) + devIocStats heartbeat. Called by APScheduler."""
-    from concurrent.futures import ThreadPoolExecutor
     with app.app_context():
         from . import db
         from .models import SoftIOC, EmailList, SystemConfig
         from .email_utils import send_notification_email
-        from .ioc_utils import check_ioc
+        from .ioc_utils import check_iocs_batch
 
         cfg = {c.key: c.value for c in SystemConfig.query.all()}
         default_notify_interval = int(cfg.get('default_notify_interval', 3600))
@@ -745,20 +744,14 @@ def check_iocs(app):
         if not iocs:
             return
 
-        def _check(ioc):
-            if ioc.is_hard or _stopping.is_set():
-                return None
-            try:
-                return check_ioc(ioc)
-            except Exception as exc:
-                logger.exception('IOC check failed for %s', ioc.name)
-                return 'UNREACHABLE', str(exc)[:500]
-
         soft = [i for i in iocs if not i.is_hard]
         procs = {}
-        if soft:
-            with ThreadPoolExecutor(max_workers=min(8, len(soft))) as pool:
-                procs = dict(zip((i.id for i in soft), pool.map(_check, soft)))
+        if soft and not _stopping.is_set():
+            try:
+                procs = check_iocs_batch(soft)       # one SSH call per host, none for this computer
+            except Exception as exc:
+                logger.exception('IOC batch check failed')
+                procs = {i.id: ('UNREACHABLE', str(exc)[:500]) for i in soft}
         if _stopping.is_set():      # shutting down: don't record half-finished results
             return
         all_stats = _fetch_ioc_stats(iocs)

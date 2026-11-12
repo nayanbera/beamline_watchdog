@@ -447,6 +447,12 @@ The **IOCs** page also has an *SSH key login for remote hosts* card listing ever
 your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
 without opening an IOC form.
 
+**Efficient status checks:** each cycle the watchdog makes **one** SSH call per remote host (checking all of
+that host's IOCs together), and IOCs on the computer the watchdog runs on (host `localhost`, or this
+machine's own hostname with a blank SSH user or the watchdog's own user) are checked directly with no SSH
+at all. Start/Stop still go through SSH, so IOCs started on this machine stay outside the systemd service's
+process group. Custom *Status commands* on this machine run directly as the watchdog user.
+
 **Sorting:** click any column header in any table to sort (click again to reverse). Numbers, durations
 (`Up 2h 22m`) and memory sizes sort by value, empty cells (`—`) always go last, and the choice is kept
 while you stay in the browser tab. On paginated tables (logs) it sorts the rows on the current page.

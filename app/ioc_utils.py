@@ -1,9 +1,13 @@
 """Run commands for soft-IOCs locally or on remote hosts over SSH."""
+import functools
+import getpass
 import logging
 import re
 import shlex
+import socket
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,14 @@ def _wrap(ioc, command):
     return command
 
 
+def _ssh_argv(host, user, port, command):
+    argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+            '-o', 'StrictHostKeyChecking=accept-new']
+    if port:
+        argv += ['-p', str(int(port))]
+    return argv + [f'{user}@{host}' if user else host, '--', command]
+
+
 def run_on_host(ioc, command, timeout=10):
     """
     Run a shell command for `ioc` on its host.
@@ -38,12 +50,7 @@ def run_on_host(ioc, command, timeout=10):
     else:
         if not valid_host_fields(ioc.host, ioc.ssh_user):
             return None, 'Invalid host or user.'
-        argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-                '-o', 'StrictHostKeyChecking=accept-new']
-        if ioc.ssh_port:
-            argv += ['-p', str(int(ioc.ssh_port))]
-        dest = f'{ioc.ssh_user}@{ioc.host}' if ioc.ssh_user else ioc.host
-        argv += [dest, '--', command]
+        argv = _ssh_argv(ioc.host, ioc.ssh_user, ioc.ssh_port, command)
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -68,8 +75,7 @@ def _procserv_find(port):
     return f"pid=$(pgrep -f {shlex.quote(pattern)} | head -1)"
 
 
-def check_ioc(ioc):
-    """Returns (status, detail): status is RUNNING, STOPPED or UNREACHABLE."""
+def _status_cmd(ioc):
     if ioc.status_command:
         cmd = ioc.status_command
     elif ioc.procserv_port:
@@ -78,12 +84,91 @@ def check_ioc(ioc):
         cmd = f'{_procserv_find(ioc.procserv_port)}; [ -n "$pid" ] && pgrep -P "$pid" >/dev/null'
     else:
         cmd = f'pgrep -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
-    rc, out = run_on_host(ioc, cmd, timeout=10)
+    return cmd
+
+
+def check_ioc(ioc):
+    """Returns (status, detail) for one IOC: RUNNING, STOPPED or UNREACHABLE."""
+    rc, out = run_on_host(ioc, _status_cmd(ioc), timeout=10)
     if rc is None or rc == 255 and ioc.host.strip().lower() not in LOCAL_HOSTS:
         return 'UNREACHABLE', (out or 'SSH connection failed')[:500]
     if rc == 0:
         return 'RUNNING', None
     return 'STOPPED', None
+
+
+@functools.lru_cache(maxsize=1)
+def _own_names():
+    names = {socket.gethostname().lower(), socket.getfqdn().lower()}
+    return names | {n.split('.')[0] for n in names}
+
+
+def _runs_locally(ioc):
+    """True if the IOC's host is this computer and the SSH user (if any) is the watchdog's own user."""
+    host = (ioc.host or '').strip().lower()
+    if host not in LOCAL_HOSTS and host not in _own_names():
+        return False
+    try:
+        return not ioc.ssh_user or ioc.ssh_user == getpass.getuser()
+    except Exception:
+        return not ioc.ssh_user
+
+
+def _check_group(key, iocs):
+    """Check all `iocs` of one host with a single local/SSH invocation."""
+    script = '; '.join(
+        f'sh -c {shlex.quote(_wrap(i, _status_cmd(i)))} >/dev/null 2>&1 </dev/null; echo "WD:{i.id}:$?"'
+        for i in iocs)
+    command = f'sh -c {shlex.quote(script)}'
+    timeout = min(15 + len(iocs), 60)
+    if key is None:                                   # this computer: no SSH needed
+        argv = ['bash', '-c', command]
+    else:
+        argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command)
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                           stdin=subprocess.DEVNULL)
+        out = (r.stdout + r.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return {i.id: ('UNREACHABLE', f'Timed out after {timeout} s.') for i in iocs}
+    except Exception as exc:
+        return {i.id: ('UNREACHABLE', str(exc)[:500]) for i in iocs}
+    codes = dict(re.findall(r'^WD:(\d+):(\d+)$', r.stdout, re.M))
+    res = {}
+    for i in iocs:
+        if str(i.id) in codes:
+            res[i.id] = ('RUNNING', None) if codes[str(i.id)] == '0' else ('STOPPED', None)
+        else:
+            res[i.id] = ('UNREACHABLE', (out or 'SSH connection failed')[:500])
+    return res
+
+
+def check_iocs_batch(iocs):
+    """
+    Status of many soft IOCs with one invocation per host (instead of one SSH login per IOC);
+    IOCs on this computer are checked directly, without SSH.
+    Returns {ioc.id: (status, detail)}.
+    """
+    groups, results = {}, {}
+    for ioc in iocs:
+        if _runs_locally(ioc):
+            key = None
+        elif valid_host_fields(ioc.host, ioc.ssh_user):
+            key = (ioc.host.strip().lower(), ioc.ssh_user or '', ioc.ssh_port or 0)
+        else:
+            results[ioc.id] = ('UNREACHABLE', 'Invalid host or user.')
+            continue
+        groups.setdefault(key, []).append(ioc)
+    if groups:
+        with ThreadPoolExecutor(max_workers=min(8, len(groups))) as pool:
+            futures = [(g, pool.submit(_check_group, k, g)) for k, g in groups.items()]
+            for g, f in futures:
+                try:
+                    results.update(f.result())
+                except Exception as exc:
+                    logger.exception('IOC group check failed')
+                    results.update({i.id: ('UNREACHABLE', str(exc)[:500]) for i in g})
+    return results
 
 
 def start_ioc(ioc):
