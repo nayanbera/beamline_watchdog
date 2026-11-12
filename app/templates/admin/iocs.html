@@ -8,6 +8,9 @@
     <a href="{{ url_for('admin.action_logs') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-clock-history"></i> Full Action Log
     </a>
+    <a href="{{ url_for('admin.ioc_import') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-upload"></i> Import from start_ioc
+    </a>
     <a href="{{ url_for('admin.ioc_form') }}" class="btn btn-primary btn-sm">
       <i class="bi bi-plus-lg"></i> Add IOC
     </a>
@@ -99,7 +102,7 @@
       <tbody>
         {% for ioc in iocs %}
         <tr class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') and ioc.enabled else '' }}"
-            data-search="{{ ioc.name }} {{ ioc.description or '' }} {{ ioc.host }} {{ ioc.stats_prefix or '' }} {{ ioc.match_value }} {{ ioc.category.name if ioc.category else '' }}">
+            data-search="{{ ioc.name }} {{ ioc.description or '' }} {{ ioc.host }} {{ ioc.stats_prefix or '' }} {{ ioc.procserv_port or '' }} {{ ioc.match_value }} {{ ioc.category.name if ioc.category else '' }}">
           <td>
             <input type="checkbox" class="form-check-input row-check"
                    value="{{ ioc.id }}" onchange="updateBulkBar()">
@@ -128,7 +131,7 @@
             {% else %}<span class="text-muted small">—</span>{% endif %}
           </td>
           <td class="small"><code>{{ ioc.target }}</code></td>
-          <td class="small text-muted">{% if ioc.is_hard %}<span class="text-muted">—</span>{% else %}<code>{{ ioc.status_command or ioc.match_value }}</code>{% endif %}</td>
+          <td class="small text-muted">{% if ioc.is_hard %}<span class="text-muted">—</span>{% elif ioc.procserv_port and not ioc.status_command %}procServ <code>:{{ ioc.procserv_port }}</code>{% else %}<code>{{ ioc.status_command or ioc.match_value }}</code>{% endif %}</td>
           <td class="small text-nowrap">
             {% if ioc.stats_prefix and ioc.ioc_uptime %}
               <span title="Started {{ ioc.ioc_started or '?' }}">{{ ioc.ioc_uptime }}</span>
@@ -167,7 +170,7 @@
             <form method="POST" action="{{ url_for('admin.ioc_control', ioc_id=ioc.id, action='stop') }}"
                   class="d-inline" onsubmit="return confirm('Stop \'{{ ioc.name }}\' on {{ ioc.host }}?')">
               <button class="btn btn-sm btn-outline-warning py-0"
-                      title="{{ 'Stop: ' + ioc.stop_command if ioc.stop_command else 'pkill -f ' + ioc.match_value }}"
+                      title="{{ 'Stop: ' + ioc.stop_command if ioc.stop_command else ('Kill procServ on port ' ~ ioc.procserv_port if ioc.procserv_port else 'pkill -f ' + ioc.match_value) }}"
                       {{ 'disabled' if ioc.status != 'RUNNING' }}>
                 <i class="bi bi-stop-fill"></i> Stop
               </button>

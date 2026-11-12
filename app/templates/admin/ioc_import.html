@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Import IOCs — Admin{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header bg-dark text-white">
+        <h5 class="mb-0"><i class="bi bi-upload"></i> Import IOCs from a start_ioc script</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          Paste your <code>start_ioc</code> script, or just its <code>IOCLIST</code> table. Each
+          <code>NAME PORT ONBOOT COMMAND</code> line becomes a procServ-managed soft IOC:
+          <strong>status</strong> = procServ on that port with a live IOC process,
+          <strong>start</strong> = <code>&lt;script&gt; -s NAME</code>,
+          <strong>stop</strong> = kill that procServ. IOCs already present (same host and name
+          <em>or</em> same procServ port) are skipped, so re-importing is safe.
+        </p>
+        <form method="POST">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">IOC table / script <span class="text-danger">*</span></label>
+              <textarea name="ioclist" rows="10" required
+                class="form-control font-monospace small"
+                placeholder="15IDSensors   20070   1   /path/to/iocSensors/startSensors">{{ form.get('ioclist', '') }}</textarea>
+            </div>
+
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Host <span class="text-danger">*</span></label>
+              <input type="text" name="host" class="form-control font-monospace" required
+                     value="{{ form.get('host', 'localhost') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">SSH User</label>
+              <input type="text" name="ssh_user" class="form-control font-monospace"
+                     value="{{ form.get('ssh_user', '') }}" placeholder="chem_epics">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">SSH Port</label>
+              <input type="number" name="ssh_port" class="form-control"
+                     value="{{ form.get('ssh_port', '') }}" placeholder="22">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Full path of <code>start_ioc</code> on that host <span class="text-danger">*</span></label>
+              <input type="text" name="start_script" class="form-control font-monospace" required
+                     value="{{ form.get('start_script', '') }}" placeholder="/home/chem_epics/bin/start_ioc">
+              <small class="text-muted">A real path, not a placeholder. Start runs <code>&lt;path&gt; -s NAME</code>.</small>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="category_id" class="form-select">
+                <option value="">— Uncategorized —</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" {{ 'selected' if form.get('category_id') == cat.id|string }}>{{ cat.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email List</label>
+              <select name="email_list_id" class="form-select">
+                <option value="">— No notification —</option>
+                {% for el in email_lists %}
+                <option value="{{ el.id }}" {{ 'selected' if form.get('email_list_id') == el.id|string }}>{{ el.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            {% set first = request.method == 'GET' %}
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="skip_telnet" id="skip_telnet"
+                       {{ 'checked' if first or 'skip_telnet' in form }}>
+                <label class="form-check-label" for="skip_telnet">
+                  Skip terminal-server lines (command is <code>/usr/bin/telnet …</code>)
+                  <small class="text-muted d-block">Those are hard IOCs: add them as <em>Hard IOC</em> with their devIocStats prefix instead.</small>
+                </label>
+              </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="headings_as_categories" id="hc"
+                       {{ 'checked' if first or 'headings_as_categories' in form }}>
+                <label class="form-check-label" for="hc">
+                  Use the <code>#</code> comment headings as categories
+                  <small class="text-muted d-block">Created if missing; overrides the category above for IOCs under a heading.</small>
+                </label>
+              </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="prefix_from_name" id="pfn"
+                       {{ 'checked' if 'prefix_from_name' in form }}>
+                <label class="form-check-label" for="pfn">
+                  Use the IOC name as its devIocStats prefix
+                  <small class="text-muted d-block">Only tick this if the IOCs already load devIocStats with <code>IOC=&lt;name&gt;</code>; otherwise they will be reported as HUNG.</small>
+                </label>
+              </div>
+              <div class="form-check mt-1">
+                <input class="form-check-input" type="checkbox" name="enabled" id="en"
+                       {{ 'checked' if first or 'enabled' in form }}>
+                <label class="form-check-label" for="en">Enable monitoring immediately</label>
+              </div>
+            </div>
+          </div>
+          <hr>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary"><i class="bi bi-upload"></i> Import</button>
+            <a href="{{ url_for('admin.iocs') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

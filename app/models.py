@@ -332,6 +332,8 @@ class SoftIOC(db.Model):
     # Status: pgrep -f match_value, unless status_command is set (exit 0 = running)
     match_value = db.Column(db.String(500), nullable=False)
     status_command = db.Column(db.String(1000))
+    # procServ-managed IOC: status/start/stop are keyed on this procServ port
+    procserv_port = db.Column(db.Integer)
     # devIocStats (optional for soft IOCs, required for hard IOCs)
     stats_prefix = db.Column(db.String(100))    # record prefix, e.g. '15IDA' -> 15IDA:HEARTBEAT
     hb_timeout = db.Column(db.Integer, default=30)  # seconds of frozen/missing heartbeat => HUNG

@@ -1013,6 +1013,97 @@ def iocs():
                            category_colors=get_category_colors())
 
 
+def _parse_ioclist(text):
+    """
+    Parse a start_ioc-style IOC table (the whole script or just the table).
+    Lines: NAME PORT ONBOOT COMMAND...; '#' lines are headings.
+    Returns [(heading, name, port, command)].
+    """
+    import re
+    m = re.search(r'IOCLIST\s*=\s*"""(.*?)"""', text, re.S)
+    if m:
+        text = m.group(1)
+    entries, heading = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('#'):
+            heading = line.lstrip('# ').strip() or None
+            continue
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[1].isdigit() and parts[2] in ('0', '1'):
+            entries.append((heading, parts[0], int(parts[1]), parts[3].strip()))
+    return entries
+
+
+@admin_bp.route('/iocs/import', methods=['GET', 'POST'])
+@login_required
+def ioc_import():
+    categories = Category.query.order_by(Category.name).all()
+    email_lists = EmailList.query.order_by(EmailList.name).all()
+    form = request.form
+    rerender = lambda: render_template('admin/ioc_import.html', categories=categories,
+                                       email_lists=email_lists, form=form)
+    if request.method != 'POST':
+        return rerender()
+
+    host = form.get('host', '').strip() or 'localhost'
+    user = form.get('ssh_user', '').strip() or None
+    script = form.get('start_script', '').strip()
+    port = form.get('ssh_port', '').strip()
+    entries = _parse_ioclist(form.get('ioclist', ''))
+    skip_telnet = 'skip_telnet' in form
+    if skip_telnet:
+        entries = [e for e in entries
+                   if not e[3].split()[0].rsplit('/', 1)[-1] == 'telnet']
+
+    err = None
+    if host.lower() not in ioc_utils.LOCAL_HOSTS and not ioc_utils.valid_host_fields(host, user):
+        err = 'Invalid host or SSH user.'
+    elif not script:
+        err = 'The full path of the start_ioc script is required.'
+    elif port and not (port.isdigit() and 1 <= int(port) <= 65535):
+        err = 'Invalid SSH port.'
+    elif not entries:
+        err = 'No importable IOC lines found (expected: NAME PORT ONBOOT COMMAND).'
+    if err:
+        flash(err, 'danger')
+        return rerender()
+
+    default_cat = int(form['category_id']) if form.get('category_id') else None
+    elist = int(form['email_list_id']) if form.get('email_list_id') else None
+    cats = {c.name: c.id for c in categories}
+    added, skipped = [], []
+    for heading, name, pport, cmd in entries:
+        dup = SoftIOC.query.filter(SoftIOC.host == host,
+                                   (SoftIOC.name == name) | (SoftIOC.procserv_port == pport)).first()
+        if dup:
+            skipped.append(name)
+            continue
+        cat_id = default_cat
+        if 'headings_as_categories' in form and heading:
+            if heading not in cats:
+                c = Category(name=heading)
+                db.session.add(c)
+                db.session.flush()
+                cats[heading] = c.id
+            cat_id = cats[heading]
+        db.session.add(SoftIOC(
+            name=name, description=cmd[:500], ioc_type='soft', host=host,
+            ssh_user=user, ssh_port=int(port) if port else None,
+            procserv_port=pport, match_value=f'procServ port {pport}',
+            start_command=f'{script} -s {shlex.quote(name)}',
+            stats_prefix=name if 'prefix_from_name' in form else None,
+            category_id=cat_id, email_list_id=elist, notify_flag=bool(elist),
+            enabled='enabled' in form))
+        added.append(name)
+    db.session.commit()
+    msg = f'Imported {len(added)} IOC(s).'
+    if skipped:
+        msg += f' Skipped {len(skipped)} already present (same name or procServ port): ' + ', '.join(skipped) + '.'
+    flash(msg, 'success')
+    return redirect(url_for('admin.iocs'))
+
+
 @admin_bp.route('/iocs/add', methods=['GET', 'POST'])
 @admin_bp.route('/iocs/<int:ioc_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -1063,6 +1154,7 @@ def ioc_form(ioc_id=None):
             ioc.host = ''
             ioc.ssh_user = ioc.ssh_port = ioc.working_dir = None
             ioc.start_command = ioc.stop_command = ioc.status_command = None
+            ioc.procserv_port = None
             ioc.match_value = ''
             if not ioc.stats_prefix:
                 errors['stats_prefix'] = 'A devIocStats prefix is required for hard IOCs.'
@@ -1074,6 +1166,17 @@ def ioc_form(ioc_id=None):
             ioc.stop_command = f.get('stop_command', '').strip() or None
             ioc.match_value = f.get('match_value', '').strip()
             ioc.status_command = f.get('status_command', '').strip() or None
+            ioc.procserv_port = None
+            pp = f.get('procserv_port', '').strip()
+            if pp:
+                try:
+                    ioc.procserv_port = int(pp)
+                    if not 1 <= ioc.procserv_port <= 65535:
+                        raise ValueError
+                except ValueError:
+                    errors['procserv_port'] = 'Must be a port number (1-65535).'
+            if not ioc.match_value and ioc.procserv_port:
+                ioc.match_value = f'procServ port {ioc.procserv_port}'
             port = f.get('ssh_port', '').strip()
             ioc.ssh_port = None
             if port:
@@ -1084,7 +1187,7 @@ def ioc_form(ioc_id=None):
                 except ValueError:
                     errors['ssh_port'] = 'Must be a port number (1-65535).'
             if not ioc.match_value:
-                errors['match_value'] = 'Process match is required.'
+                errors['match_value'] = 'Process match (or procServ port) is required.'
             if ioc.host.lower() not in ioc_utils.LOCAL_HOSTS and \
                     not ioc_utils.valid_host_fields(ioc.host, ioc.ssh_user):
                 errors['host'] = 'Invalid host or SSH user (letters, digits, . - _ : only).'
@@ -1123,6 +1226,14 @@ def ioc_toggle(ioc_id):
     return redirect(url_for('admin.iocs'))
 
 
+def _stop_label(ioc):
+    if ioc.stop_command:
+        return ioc.stop_command
+    if ioc.procserv_port:
+        return f'kill procServ (port {ioc.procserv_port})'
+    return f'pkill -f {ioc.match_value}'
+
+
 def _log_ioc_action(ioc, action, command, success, output):
     db.session.add(ActionLog(
         admin_username=current_user.username, action=action,
@@ -1145,11 +1256,11 @@ def ioc_control(ioc_id, action):
         _log_ioc_action(ioc, 'START', ioc.start_command, ok, out)
     elif action == 'stop':
         ok, out = ioc_utils.stop_ioc(ioc)
-        _log_ioc_action(ioc, 'STOP', ioc.stop_command or f'pkill -f {ioc.match_value}', ok, out)
+        _log_ioc_action(ioc, 'STOP', _stop_label(ioc), ok, out)
     else:
         import time
         ok, out = ioc_utils.stop_ioc(ioc)
-        _log_ioc_action(ioc, 'STOP', ioc.stop_command or f'pkill -f {ioc.match_value}', ok, out)
+        _log_ioc_action(ioc, 'STOP', _stop_label(ioc), ok, out)
         time.sleep(2)
         ok2, out2 = ioc_utils.start_ioc(ioc)
         _log_ioc_action(ioc, 'START', ioc.start_command, ok2, out2)

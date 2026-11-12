@@ -186,6 +186,7 @@ def _run_migrations():
                 ('ioc_started',    'TEXT'),
                 ('ioc_cpu',        'FLOAT'),
                 ('last_restart',   'DATETIME'),
+                ('procserv_port',  'INTEGER'),
             ]:
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE soft_iocs ADD COLUMN {col} {typedef}'))

@@ -119,14 +119,23 @@
 
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Process Monitoring</h6></div>
 
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">procServ Port</label>
+              <input type="number" name="procserv_port"
+                class="form-control {{ 'is-invalid' if errors.get('procserv_port') }}"
+                value="{{ ioc.procserv_port or '' }}" placeholder="e.g. 20070">
+              {% if errors.get('procserv_port') %}<div class="invalid-feedback">{{ errors.procserv_port }}</div>{% endif %}
+              <small class="text-muted">For IOCs run under procServ. RUNNING = procServ is up <em>and</em> its IOC process is alive; Stop kills procServ; Start clears a stale procServ first.</small>
+            </div>
+
             <div class="col-12">
-              <label class="form-label fw-semibold">Process Match <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold">Process Match</label>
               <input type="text" name="match_value"
                 class="form-control font-monospace {{ 'is-invalid' if errors.get('match_value') }}"
                 value="{{ ioc.match_value or '' }}" placeholder="st.cmd motors">
               {% if errors.get('match_value') %}<div class="invalid-feedback">{{ errors.match_value }}</div>{% endif %}
               <small class="text-muted">
-                Regex matched against full command lines on the host (<code>pgrep -f</code>).
+                Regex on full command lines (<code>pgrep -f</code>); only needed when no procServ port is set.
                 Pick something unique to this IOC. Also used for the default Stop (<code>pkill -f</code>).
               </small>
             </div>

@@ -62,9 +62,22 @@ def _pgrep_pattern(value):
     return value
 
 
+def _procserv_find(port):
+    """Shell snippet that sets $pid to the procServ instance listening on `port`."""
+    pattern = f'[p]rocServ .* {int(port)}( |$)'   # [p]: don't match this shell's own command line
+    return f"pid=$(pgrep -f {shlex.quote(pattern)} | head -1)"
+
+
 def check_ioc(ioc):
     """Returns (status, detail): status is RUNNING, STOPPED or UNREACHABLE."""
-    cmd = ioc.status_command or f'pgrep -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
+    if ioc.status_command:
+        cmd = ioc.status_command
+    elif ioc.procserv_port:
+        # RUNNING = procServ is up AND its child (the IOC) is alive. With --noautorestart
+        # procServ outlives a crashed IOC, so the listening port alone isn't enough.
+        cmd = f'{_procserv_find(ioc.procserv_port)}; [ -n "$pid" ] && pgrep -P "$pid" >/dev/null'
+    else:
+        cmd = f'pgrep -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
     rc, out = run_on_host(ioc, cmd, timeout=10)
     if rc is None or rc == 255 and ioc.host.strip().lower() not in LOCAL_HOSTS:
         return 'UNREACHABLE', (out or 'SSH connection failed')[:500]
@@ -81,6 +94,12 @@ def start_ioc(ioc):
     """
     if not ioc.start_command:
         return False, 'No start command configured.'
+    if ioc.procserv_port:
+        # A crashed IOC leaves its procServ behind, which makes start scripts think it is
+        # still running. Clear it first, but only if the IOC child is gone.
+        run_on_host(ioc, f'{_procserv_find(ioc.procserv_port)}; '
+                         '[ -n "$pid" ] && ! pgrep -P "$pid" >/dev/null && '
+                         'kill "$pid" && sleep 1; true', timeout=15)
     inner = shlex.quote(ioc.start_command)
     cmd = (
         'LOG=$(mktemp /tmp/wd-start.XXXXXX); '
@@ -102,6 +121,14 @@ def start_ioc(ioc):
 
 
 def stop_ioc(ioc):
-    cmd = ioc.stop_command or f'pkill -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
+    if ioc.stop_command:
+        cmd = ioc.stop_command
+    elif ioc.procserv_port:
+        # Killing procServ also takes down its IOC child
+        cmd = (f'{_procserv_find(ioc.procserv_port)}; '
+               'if [ -n "$pid" ]; then kill "$pid" && echo "Stopped procServ (pid $pid)"; '
+               'else echo "procServ not running"; exit 1; fi')
+    else:
+        cmd = f'pkill -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
     rc, out = run_on_host(ioc, cmd, timeout=20)
     return rc == 0, out or ('Stop issued.' if rc == 0 else f'Exit {rc}.')

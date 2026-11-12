@@ -425,6 +425,22 @@ for IOCs on the watchdog machine. Per IOC: host / user / port, working directory
 process-match regex, optional status command (exit 0 = running), start and stop commands
 (default stop is `pkill -f <match>`). Start commands run detached.
 
+**procServ-managed IOCs:** if an IOC runs under procServ (e.g. via a `start_ioc` script), set its
+*procServ Port* instead of writing commands. Status is RUNNING only when the procServ on that
+port is up **and its IOC child process is alive** (with `--noautorestart` procServ outlives a
+crashed IOC); Stop kills that procServ (and the IOC with it); Start first clears a stale
+procServ, then runs your start command (typically `/path/to/start_ioc -s NAME`).
+
+**Import:** *IOCs → Import from start_ioc* takes the script (or its `IOCLIST` table) and creates
+one IOC per `NAME PORT ONBOOT COMMAND` line — port, start command (`<script> -s NAME`),
+categories from the `#` headings, and optionally the IOC name as devIocStats prefix.
+Terminal-server (`/usr/bin/telnet …`) lines are skipped by default because those are hard IOCs.
+Re-importing skips IOCs whose name or procServ port already exists.
+
+**Environment:** commands for `localhost` IOCs inherit the watchdog server's environment (for
+example its conda env). If an IOC needs specific `LD_LIBRARY_PATH`/`PATH`/Python settings, set
+them in the start script, not in the watchdog.
+
 **devIocStats (optional for soft, required for hard):** enter the IOC's *stats prefix* (the
 `IOC=` macro it loads `iocAdminSoft.db` / the vxWorks/RTEMS equivalent with). The watchdog
 reads `<prefix>:HEARTBEAT`, `:UPTIME`, `:STARTTOD` and `:IOC_CPU_LOAD` in one parallel
