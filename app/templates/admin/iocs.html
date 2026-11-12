@@ -76,32 +76,42 @@
   </div>
 </div>
 
+{% set BAD = ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') %}
+{% macro ioc_table(rows, hard, title, icon) %}
+<h5 class="mt-3 mb-2"><i class="bi {{ icon }}"></i> {{ title }}
+  <span class="badge bg-secondary ms-1">{{ rows | length }}</span></h5>
 <div class="card shadow-sm mb-4">
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <table class="table table-hover table-sm align-middle mb-0 ioc-table">
       <thead class="table-dark">
         <tr>
           <th style="width:36px">
-            <input type="checkbox" id="select-all" class="form-check-input"
-                   onchange="toggleAll(this)" title="Select all">
+            <input type="checkbox" class="form-check-input select-all"
+                   onchange="toggleAll(this)" title="Select all in this table">
           </th>
           <th>Status</th>
           <th>Name</th>
           <th>Category</th>
+          {% if hard %}
+          <th>Stats prefix</th>
+          {% else %}
           <th>Host</th>
           <th>Process match</th>
-          <th>Uptime / CPU</th>
+          {% endif %}
+          <th>Uptime</th>
+          <th>CPU</th>
+          <th>Memory</th>
           <th>Up / Down for</th>
           <th>Notify</th>
           <th>Email List</th>
           <th>Last Stopped</th>
-          <th>Control</th>
+          {% if not hard %}<th>Control</th>{% endif %}
           <th>Monitor</th>
         </tr>
       </thead>
       <tbody>
-        {% for ioc in iocs %}
-        <tr class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') and ioc.enabled else '' }}"
+        {% for ioc in rows %}
+        <tr class="{{ 'table-danger' if ioc.status in BAD and ioc.enabled else '' }}"
             data-search="{{ ioc.name }} {{ ioc.description or '' }} {{ ioc.host }} {{ ioc.stats_prefix or '' }} {{ ioc.procserv_port or '' }} {{ ioc.match_value }} {{ ioc.category.name if ioc.category else '' }}">
           <td>
             <input type="checkbox" class="form-check-input row-check"
@@ -121,7 +131,6 @@
           </td>
           <td>
             <strong>{{ ioc.name }}</strong>
-            {% if ioc.is_hard %}<span class="badge bg-dark ms-1" title="Monitor-only (devIocStats)">HARD</span>{% endif %}
             {% if ioc.description %}<br><small class="text-muted">{{ ioc.description }}</small>{% endif %}
           </td>
           <td>
@@ -130,16 +139,24 @@
               <span class="badge" style="background-color:{{ col }}">{{ ioc.category.name }}</span>
             {% else %}<span class="text-muted small">—</span>{% endif %}
           </td>
+          {% if hard %}
+          <td class="small"><code>{{ ioc.stats_prefix }}</code></td>
+          {% else %}
           <td class="small"><code>{{ ioc.target }}</code></td>
-          <td class="small text-muted">{% if ioc.is_hard %}<span class="text-muted">—</span>{% elif ioc.procserv_port and not ioc.status_command %}procServ <code>:{{ ioc.procserv_port }}</code>{% else %}<code>{{ ioc.status_command or ioc.match_value }}</code>{% endif %}</td>
-          <td class="small text-nowrap">
-            {% if ioc.stats_prefix and ioc.ioc_uptime %}
-              <span title="Started {{ ioc.ioc_started or '?' }}">{{ ioc.ioc_uptime }}</span>
-              {% if ioc.ioc_cpu is not none %}<br><span class="text-muted">CPU {{ '%.1f'|format(ioc.ioc_cpu) }}%</span>{% endif %}
-              {% if ioc.last_restart %}<br><span class="text-warning" title="Restart detected">↻ {{ localdt(ioc.last_restart, '%m-%d %H:%M') }}</span>{% endif %}
-            {% elif ioc.stats_prefix %}<span class="text-muted" title="No devIocStats response yet">n/a</span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
+          <td class="small text-muted">{% if ioc.procserv_port and not ioc.status_command %}procServ <code>:{{ ioc.procserv_port }}</code>{% else %}<code>{{ ioc.status_command or ioc.match_value }}</code>{% endif %}</td>
+          {% endif %}
+          {% if ioc.stats_prefix and ioc.ioc_uptime %}
+          <td class="small text-nowrap" title="Started {{ ioc.ioc_started or '?' }}">
+            {{ ioc.ioc_uptime }}
+            {% if ioc.last_restart %}<br><span class="text-warning" title="Restart detected">↻ {{ localdt(ioc.last_restart, '%m-%d %H:%M') }}</span>{% endif %}
           </td>
+          <td class="small text-nowrap">{% if ioc.ioc_cpu is not none %}{{ '%.1f'|format(ioc.ioc_cpu) }}%{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          <td class="small text-nowrap">{% if ioc.ioc_mem_used is not none %}{{ ioc.ioc_mem_used | memory(ioc.ioc_mem_total) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+          {% else %}
+          <td class="small text-muted" colspan="3">
+            {% if ioc.stats_prefix %}no devIocStats response yet{% else %}—{% endif %}
+          </td>
+          {% endif %}
           <td class="small text-nowrap">
             {% if ioc.enabled and ioc.status != 'UNKNOWN' %}
               <span class="{{ 'text-success' if ioc.status == 'RUNNING' else 'text-danger' }}">
@@ -156,8 +173,8 @@
               <span class="text-danger">{{ localdt(ioc.last_stopped, '%Y-%m-%d %H:%M') }}</span>
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
+          {% if not hard %}
           <td class="text-nowrap">
-            {% if ioc.is_hard %}<span class="text-muted small">monitor only</span>{% else %}
             {% if ioc.start_command %}
             <form method="POST" action="{{ url_for('admin.ioc_control', ioc_id=ioc.id, action='start') }}"
                   class="d-inline" onsubmit="return confirm('Start \'{{ ioc.name }}\' on {{ ioc.host }}?')">
@@ -183,8 +200,8 @@
               </button>
             </form>
             {% endif %}
-            {% endif %}
           </td>
+          {% endif %}
           <td class="text-nowrap">
             <a href="{{ url_for('admin.ioc_form', ioc_id=ioc.id) }}"
                class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-pencil"></i></a>
@@ -195,20 +212,25 @@
               </button>
             </form>
             <form method="POST" action="{{ url_for('admin.ioc_delete', ioc_id=ioc.id) }}" class="d-inline"
-                  onsubmit="return confirm('Delete soft-IOC \'{{ ioc.name }}\'?')">
+                  onsubmit="return confirm('Delete IOC \'{{ ioc.name }}\'?')">
               <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
             </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="12" class="text-center text-muted py-4">
-          No soft-IOCs configured. <a href="{{ url_for('admin.ioc_form') }}">Add one</a>.
+        <tr><td colspan="15" class="text-center text-muted py-3">
+          No {{ 'hard' if hard else 'soft' }} IOCs{% if cat_filter %} in this category{% endif %}.
+          <a href="{{ url_for('admin.ioc_form') }}">Add one</a>.
         </td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endmacro %}
+
+{{ ioc_table(hard_iocs, true, 'Hard IOCs (monitor only)', 'bi-cpu') }}
+{{ ioc_table(soft_iocs, false, 'Soft IOCs (SSH-controlled)', 'bi-hdd-network') }}
 {% endblock %}
 
 {% block scripts %}
@@ -220,8 +242,11 @@ function applySearch() {
   const q = box.value.toLowerCase();
   sessionStorage.setItem(SEARCH_KEY, box.value);
   document.querySelectorAll('tr[data-search]').forEach(row => {
-    row.style.display = !q || row.dataset.search.toLowerCase().includes(q) ? '' : 'none';
+    const match = !q || row.dataset.search.toLowerCase().includes(q);
+    row.style.display = match ? '' : 'none';
+    if (!match) row.querySelector('.row-check').checked = false;   // deselect hidden rows
   });
+  updateBulkBar();
 }
 document.getElementById('proc-search').addEventListener('input', applySearch);
 
@@ -247,25 +272,32 @@ document.getElementById('proc-search').addEventListener('input', applySearch);
   }
 })();
 
+function visibleChecks(scope) {
+  return Array.from((scope || document).querySelectorAll('tbody tr:not([style*="none"]) .row-check'));
+}
+
 function updateBulkBar() {
   const checked = document.querySelectorAll('.row-check:checked');
-  const all     = document.querySelectorAll('.row-check');
   document.getElementById('bulk-count').textContent = checked.length;
   document.getElementById('bulk-ids').value = Array.from(checked).map(c => c.value).join(',');
   document.getElementById('bulk-bar').classList.toggle('d-none', checked.length === 0);
-  const sa = document.getElementById('select-all');
-  sa.checked = checked.length === all.length && all.length > 0;
-  sa.indeterminate = checked.length > 0 && checked.length < all.length;
+  // each table has its own select-all checkbox
+  document.querySelectorAll('table.ioc-table').forEach(tbl => {
+    const all = visibleChecks(tbl);
+    const n = all.filter(c => c.checked).length;
+    const sa = tbl.querySelector('.select-all');
+    sa.checked = n === all.length && all.length > 0;
+    sa.indeterminate = n > 0 && n < all.length;
+  });
 }
 
 function toggleAll(cb) {
-  document.querySelectorAll('.row-check').forEach(c => c.checked = cb.checked);
+  visibleChecks(cb.closest('table')).forEach(c => c.checked = cb.checked);
   updateBulkBar();
 }
 
 function clearSelection() {
   document.querySelectorAll('.row-check').forEach(c => c.checked = false);
-  document.getElementById('select-all').checked = false;
   updateBulkBar();
 }
 </script>

@@ -309,18 +309,20 @@
   {% endfor %}
 {% endif %}
 
-<!-- Soft IOCs -->
-{% if ioc_groups %}
-<h5 class="mt-2 mb-2"><i class="bi bi-hdd-network"></i> IOC Status
+<!-- IOCs -->
+{% set IOC_BAD = ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') %}
+{% macro ioc_section(groups, hard, title, icon, pfx) %}
+{% if groups %}
+<h5 class="mt-2 mb-2"><i class="bi {{ icon }}"></i> {{ title }}
   {% if current_user.is_authenticated %}
   <a href="{{ url_for('admin.iocs') }}" class="btn btn-sm btn-outline-secondary ms-2">
     <i class="bi bi-gear"></i> Manage
   </a>
   {% endif %}
 </h5>
-  {% for cat_name, cat_iocs in ioc_groups %}
-  {% set grp_id = 'iocgrp-' ~ loop.index %}
-  {% set down_in_group = cat_iocs | selectattr('status', 'in', ['STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED']) | selectattr('enabled') | list | length %}
+  {% for cat_name, cat_iocs in groups %}
+  {% set grp_id = pfx ~ '-' ~ loop.index %}
+  {% set down_in_group = cat_iocs | selectattr('status', 'in', IOC_BAD) | selectattr('enabled') | list | length %}
   {% set cat_color = category_colors.get(cat_name, '#6c757d') %}
   <div class="card shadow-sm mb-3">
     <div class="card-header text-white d-flex align-items-center justify-content-between"
@@ -343,17 +345,19 @@
             <tr>
               <th style="width:120px">Status</th>
               <th>IOC Name</th>
-              <th>Host</th>
+              <th>{{ 'Prefix' if hard else 'Host' }}</th>
               <th>Up / Down for</th>
-              <th>Uptime / CPU</th>
+              <th>Uptime</th>
+              <th>CPU</th>
+              <th>Memory</th>
               <th>Last Checked</th>
               <th>Last Stopped</th>
-              {% if current_user.is_authenticated %}<th>Control</th>{% endif %}
+              {% if not hard and current_user.is_authenticated %}<th>Control</th>{% endif %}
             </tr>
           </thead>
           <tbody>
             {% for ioc in cat_iocs %}
-            <tr id="ioc-row-{{ ioc.id }}" class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') and ioc.enabled else ('text-muted' if not ioc.enabled else '') }}">
+            <tr id="ioc-row-{{ ioc.id }}" class="{{ 'table-danger' if ioc.status in IOC_BAD and ioc.enabled else ('text-muted' if not ioc.enabled else '') }}">
               <td>
                 {% if not ioc.enabled %}
                   <span class="badge bg-secondary" id="ioc-badge-{{ ioc.id }}">DISABLED</span>
@@ -362,27 +366,26 @@
                         id="ioc-badge-{{ ioc.id }}" title="{{ ioc.status_detail or '' }}">{{ ioc.status }}</span>
                 {% endif %}
               </td>
-              <td><strong>{{ ioc.name }}</strong>{% if ioc.is_hard %} <span class="badge bg-dark">HARD</span>{% endif %}
+              <td><strong>{{ ioc.name }}</strong>
                 {% if ioc.description %}<br><small class="text-muted">{{ ioc.description }}</small>{% endif %}
               </td>
-              <td class="small"><code>{{ ioc.target }}</code></td>
+              <td class="small"><code>{{ ioc.stats_prefix if hard else ioc.target }}</code></td>
               <td class="small text-nowrap" id="ioc-since-{{ ioc.id }}">
                 {% if ioc.enabled and ioc.status != 'UNKNOWN' %}
                   <span class="{{ 'text-success' if ioc.status == 'RUNNING' else 'text-danger' }}">{{ 'Up' if ioc.status == 'RUNNING' else 'Down' }} {{ ioc.status_since | duration }}</span>
                 {% else %}<span class="text-muted">—</span>{% endif %}
               </td>
-              <td class="small text-nowrap" id="ioc-stats-{{ ioc.id }}">
-                {% if ioc.stats_prefix and ioc.ioc_uptime %}{{ ioc.ioc_uptime }}{% if ioc.ioc_cpu is not none %} <span class="text-muted">· {{ '%.1f'|format(ioc.ioc_cpu) }}%</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}
-              </td>
+              <td class="small text-nowrap" id="ioc-uptime-{{ ioc.id }}">{% if ioc.stats_prefix and ioc.ioc_uptime %}{{ ioc.ioc_uptime }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td class="small text-nowrap" id="ioc-cpu-{{ ioc.id }}">{% if ioc.stats_prefix and ioc.ioc_cpu is not none %}{{ '%.1f'|format(ioc.ioc_cpu) }}%{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td class="small text-nowrap" id="ioc-mem-{{ ioc.id }}">{% if ioc.stats_prefix and ioc.ioc_mem_used is not none %}{{ ioc.ioc_mem_used | memory(ioc.ioc_mem_total) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
               <td class="small" id="ioc-checked-{{ ioc.id }}">{{ localdt(ioc.last_checked, '%H:%M:%S %Z') }}</td>
               <td class="small" id="ioc-stopped-{{ ioc.id }}">
                 {% if ioc.last_stopped %}
                   <span class="text-danger">{{ localdt(ioc.last_stopped, '%Y-%m-%d %H:%M') }}</span>
                 {% else %}<span class="text-muted">—</span>{% endif %}
               </td>
-              {% if current_user.is_authenticated %}
+              {% if not hard and current_user.is_authenticated %}
               <td class="text-nowrap">
-                {% if ioc.is_hard %}<span class="text-muted small">—</span>{% else %}
                 {% if ioc.start_command %}
                 <form method="POST" action="{{ url_for('admin.ioc_control', ioc_id=ioc.id, action='start') }}"
                       class="d-inline" onsubmit="return confirm('Start {{ ioc.name }} on {{ ioc.host }}?')">
@@ -406,7 +409,6 @@
                   <button class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-clockwise"></i></button>
                 </form>
                 {% endif %}
-                {% endif %}
               </td>
               {% endif %}
             </tr>
@@ -418,6 +420,9 @@
   </div>
   {% endfor %}
 {% endif %}
+{% endmacro %}
+{{ ioc_section(hard_ioc_groups, true, 'Hard IOC Status', 'bi-cpu', 'hiocgrp') }}
+{{ ioc_section(soft_ioc_groups, false, 'Soft IOC Status', 'bi-hdd-network', 'siocgrp') }}
 
 <!-- Compound Rules -->
 {% if rules %}
@@ -612,10 +617,13 @@ async function refresh() {
       if (since) since.innerHTML = (i.enabled && i.status !== 'UNKNOWN')
         ? `<span class="${i.status === 'RUNNING' ? 'text-success' : 'text-danger'}">${i.status === 'RUNNING' ? 'Up' : 'Down'} ${i.since}</span>`
         : '<span class="text-muted">—</span>';
-      const st = document.getElementById(`ioc-stats-${i.id}`);
-      if (st) st.innerHTML = i.uptime
-        ? `${i.uptime}${i.cpu !== null ? ` <span class="text-muted">· ${i.cpu}%</span>` : ''}`
-        : '<span class="text-muted">—</span>';
+      const setCell = (id, text) => {
+        const el = document.getElementById(`${id}-${i.id}`);
+        if (el) el.innerHTML = text || '<span class="text-muted">—</span>';
+      };
+      setCell('ioc-uptime', i.uptime);
+      setCell('ioc-cpu', i.cpu === null ? '' : `${i.cpu}%`);
+      setCell('ioc-mem', i.mem);
       const chk = document.getElementById(`ioc-checked-${i.id}`);
       if (chk) chk.textContent = i.last_checked;
       const stp = document.getElementById(`ioc-stopped-${i.id}`);

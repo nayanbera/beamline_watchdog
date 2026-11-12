@@ -360,6 +360,8 @@ class SoftIOC(db.Model):
     ioc_uptime = db.Column(db.String(100))      # UPTIME string from the IOC
     ioc_started = db.Column(db.String(100))     # STARTTOD string (changes on restart)
     ioc_cpu = db.Column(db.Float)               # IOC CPU load, %
+    ioc_mem_used = db.Column(db.Float)          # IOC memory used, bytes
+    ioc_mem_total = db.Column(db.Float)         # IOC memory total/max, bytes
     last_restart = db.Column(db.DateTime)       # last restart detected via STARTTOD
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

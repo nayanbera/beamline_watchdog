@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
-from .. import format_duration
+from .. import format_duration, format_memory
 from ..models import PVMonitor, CompoundRule, ProcessMonitor, SoftIOC, get_category_colors
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,8 @@ def index():
         'dashboard.html',
         pv_groups=_group_by_category(pvs),
         proc_groups=_group_by_category(processes),
-        ioc_groups=_group_by_category(iocs),
+        hard_ioc_groups=_group_by_category([i for i in iocs if i.is_hard]),
+        soft_ioc_groups=_group_by_category([i for i in iocs if not i.is_hard]),
         rules=rules,
         ok_count=ok_count,
         alarm_count=alarm_count,
@@ -149,6 +150,7 @@ def api_status():
             'is_hard': i.is_hard,
             'uptime': i.ioc_uptime or '',
             'cpu': None if i.ioc_cpu is None else round(i.ioc_cpu, 1),
+            'mem': format_memory(i.ioc_mem_used, i.ioc_mem_total) if i.ioc_mem_used is not None else '',
         })
 
     enabled_statuses = [p['status'] for p in pv_data if p['enabled']]

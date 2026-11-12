@@ -460,8 +460,9 @@ Combined state for soft IOCs with a prefix:
 Hard IOCs show `RUNNING`, `HUNG` (heartbeat frozen) or `DISCONNECTED` (no CA response).
 Email alerts are sent for stopped / hung / disconnected / unreachable / recovered, and an
 `IOC RESTARTED` alert when the start time (`STARTTOD`) changes while the IOC looked healthy,
-i.e. it restarted between two checks. Uptime and CPU load appear on the IOC list and the
-dashboard. Start/stop actions are recorded in the Action Log.
+i.e. it restarted between two checks. Uptime, CPU load and memory (`MEM_USED` of `MEM_MAX`, or
+used + free; units taken from the record's EGU) appear on the IOC list and the dashboard, in
+separate tables for hard and soft IOCs. Start/stop actions are recorded in the Action Log.
 
 ## Monitoring Network Device Reachability
 

@@ -1006,7 +1006,10 @@ def iocs():
         q = q.join(Category).filter(Category.name == cat_filter)
     recent_actions = (ActionLog.query.filter(ActionLog.process_name.like('[IOC] %'))
                       .order_by(ActionLog.timestamp.desc()).limit(10).all())
-    return render_template('admin/iocs.html', iocs=q.all(),
+    items = q.all()
+    return render_template('admin/iocs.html', iocs=items,
+                           hard_iocs=[i for i in items if i.is_hard],
+                           soft_iocs=[i for i in items if not i.is_hard],
                            recent_actions=recent_actions,
                            categories=categories, cat_filter=cat_filter,
                            email_lists=email_lists,
@@ -1123,6 +1126,7 @@ def ioc_form(ioc_id=None):
         if ioc.stats_prefix != old_prefix:   # different PVs: forget the old heartbeat state
             ioc.hb_value = ioc.hb_changed_at = ioc.hb_bad_since = None
             ioc.ioc_uptime = ioc.ioc_started = ioc.ioc_cpu = None
+            ioc.ioc_mem_used = ioc.ioc_mem_total = None
         ioc.notify_flag = 'notify_flag' in f
         was_enabled = ioc.enabled
         ioc.enabled = 'enabled' in f

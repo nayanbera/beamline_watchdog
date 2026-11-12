@@ -63,6 +63,27 @@ def create_app():
     return app
 
 
+def format_bytes(n):
+    """Human-readable size, e.g. '12.3 MB' (binary units)."""
+    if n is None:
+        return '—'
+    n = float(n)
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if abs(n) < 1024 or unit == 'TB':
+            return f'{n:.0f} {unit}' if unit == 'B' else f'{n:.1f} {unit}'
+        n /= 1024
+
+
+def format_memory(used, total=None):
+    """'123.4 MB (45%)' from used/total bytes; '—' if unknown."""
+    if used is None:
+        return '—'
+    text = format_bytes(used)
+    if total:
+        text += f' ({used / total * 100:.0f}%)'
+    return text
+
+
 def format_duration(since):
     """Human-readable time elapsed since a naive-UTC datetime, e.g. '3d 4h', '2h 15m', '45s'."""
     from datetime import datetime
@@ -102,6 +123,10 @@ def _register_template_globals(app):
     @app.template_filter('duration')
     def duration_filter(dt):
         return format_duration(dt)
+
+    @app.template_filter('memory')
+    def memory_filter(used, total=None):
+        return format_memory(used, total)
 
     @app.template_filter('fromjson')
     def fromjson_filter(s):
@@ -187,6 +212,8 @@ def _run_migrations():
                 ('ioc_cpu',        'FLOAT'),
                 ('last_restart',   'DATETIME'),
                 ('procserv_port',  'INTEGER'),
+                ('ioc_mem_used',   'FLOAT'),
+                ('ioc_mem_total',  'FLOAT'),
             ]:
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE soft_iocs ADD COLUMN {col} {typedef}'))

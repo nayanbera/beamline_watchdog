@@ -561,7 +561,8 @@ def check_all_pvs(app):
 
 
 # Standard devIocStats record suffixes (iocAdminSoft / iocAdminVxWorks / iocAdminRTEMS)
-_STATS_SUFFIXES = ('HEARTBEAT', 'UPTIME', 'STARTTOD', 'IOC_CPU_LOAD')
+_STATS_SUFFIXES = ('HEARTBEAT', 'UPTIME', 'STARTTOD', 'IOC_CPU_LOAD',
+                    'MEM_USED', 'MEM_FREE', 'MEM_MAX', 'MEM_USED.EGU')
 
 _IOC_EVENTS = {
     # event: (heading, subject tag)
@@ -573,6 +574,25 @@ _IOC_EVENTS = {
     'RESTARTED':    ('IOC RESTARTED',           'IOC RESTARTED'),
 }
 _IOC_BAD = ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED')
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _egu_scale(egu):
+    """Bytes per unit for a devIocStats memory EGU string (default: bytes)."""
+    e = str(egu or '').strip().lower()
+    if e.startswith('k'):
+        return 1024.0
+    if e.startswith('m'):
+        return 1024.0 ** 2
+    if e.startswith('g'):
+        return 1024.0 ** 3
+    return 1.0
 
 
 def _fetch_ioc_stats(iocs):
@@ -636,11 +656,12 @@ def _apply_stats(ioc, stats, now):
             ioc.ioc_started = started
         up = stats.get('UPTIME')
         ioc.ioc_uptime = str(up).strip() if up not in (None, '') else ioc.ioc_uptime
-        cpu = stats.get('IOC_CPU_LOAD')
-        try:
-            ioc.ioc_cpu = float(cpu) if cpu is not None else None
-        except (TypeError, ValueError):
-            ioc.ioc_cpu = None
+        ioc.ioc_cpu = _num(stats.get('IOC_CPU_LOAD'))
+        scale = _egu_scale(stats.get('MEM_USED.EGU'))
+        used, free, mx = (_num(stats.get(k)) for k in ('MEM_USED', 'MEM_FREE', 'MEM_MAX'))
+        total = mx if mx else (used + free if used is not None and free is not None else None)
+        ioc.ioc_mem_used = used * scale if used is not None else None
+        ioc.ioc_mem_total = total * scale if total else None
 
     if state == 'DISCONNECTED' and (now - ioc.hb_bad_since).total_seconds() < timeout:
         return 'PENDING', False   # give a transient CA hiccup time to clear
