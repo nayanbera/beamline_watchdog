@@ -54,6 +54,23 @@
   </div>
 </div>
 
+{% if health_checks %}
+<div class="card shadow-sm mb-3" id="health-card">
+  <div class="card-header py-2 d-flex align-items-center justify-content-between">
+    <span><i class="bi bi-heart-pulse"></i> Server Health <small class="text-muted">{{ hostname }}</small></span>
+    <a href="{{ url_for('admin.health') }}" class="btn btn-sm btn-outline-secondary py-0">Details</a>
+  </div>
+  <div class="card-body py-2 d-flex flex-wrap gap-2">
+    {% for h in health_checks %}
+    <span class="border rounded px-2 py-1 small" title="{{ h.detail or '' }}" id="health-chip-{{ h.id }}">
+      <span class="badge {{ status_badge(h.status) }}" id="health-status-{{ h.id }}">{{ h.status }}</span>
+      {{ h.label }}: <strong id="health-value-{{ h.id }}">{{ h.value_str or '—' }}</strong>
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Active Issues — populated by JS on each refresh -->
 <div id="active-issues-card" class="card shadow-sm mb-3 border-0" style="display:none">
   <div class="card-header text-white fw-bold d-flex align-items-center justify-content-between"
@@ -600,6 +617,15 @@ async function refresh() {
         : '<span class="text-muted">—</span>';
     });
 
+    (d.health || []).forEach(h => {
+      const st = document.getElementById('health-status-' + h.id);
+      if (!st) return;
+      st.textContent = h.status;
+      st.className = 'badge ' + (h.status === 'OK' ? 'bg-success' : h.status === 'WARN' ? 'bg-warning text-dark'
+                                  : h.status === 'CRIT' ? 'bg-danger' : 'bg-secondary');
+      document.getElementById('health-value-' + h.id).textContent = h.value || '—';
+      document.getElementById('health-chip-' + h.id).title = h.detail;
+    });
     (d.iocs || []).forEach(i => {
       const row = document.getElementById(`ioc-row-${i.id}`);
       if (!row) return;

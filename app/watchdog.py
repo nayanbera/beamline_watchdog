@@ -820,6 +820,74 @@ def check_iocs(app):
             _autostart_iocs(db, to_start)
 
 
+def check_health(app):
+    """Measure this computer's health, update the HealthCheck rows and send alerts. APScheduler job."""
+    import socket
+    with app.app_context():
+        from . import db, health
+        from .models import HealthCheck, EmailList, SystemConfig
+        from .email_utils import send_notification_email
+
+        cfg = {c.key: c.value for c in SystemConfig.query.all()}
+        ignore = (cfg.get('health_ignore_units') or '').replace(',', ' ').split()
+        elist = None
+        if (cfg.get('health_email_list_id') or '').isdigit():
+            elist = EmailList.query.get(int(cfg['health_email_list_id']))
+        repeat = int(cfg.get('default_notify_interval', 3600))
+        now = datetime.utcnow()
+        now_str = _local_now_str(cfg)
+        host = socket.gethostname()
+
+        readings = health.collect(ignore)
+        rows = {r.key: r for r in HealthCheck.query.all()}
+        seen = set()
+        for rd in readings:
+            try:
+                seen.add(rd['key'])
+                row = rows.get(rd['key'])
+                if row is None:
+                    label, warn, crit = health.defaults_for(rd['key'])
+                    row = HealthCheck(key=rd['key'], label=label, warn=warn, crit=crit,
+                                     enabled=True, status='UNKNOWN', bad_count=0)
+                    db.session.add(row)
+                prev = row.status
+                row.last_checked = now
+                row.value, row.value_str, row.detail = rd['value'], rd['text'], rd['detail'][:500]
+                if not row.enabled:
+                    row.status, row.bad_count = 'UNKNOWN', 0
+                    continue
+                st = health.level(rd['value'], row.warn, row.crit)
+                row.bad_count = (row.bad_count or 0) + 1 if st != 'OK' else 0
+                if st != 'OK' and row.bad_count < 2 and prev in ('OK', 'UNKNOWN', None):
+                    st = 'OK'            # one bad reading is only a spike; wait for a second
+                row.status = st
+                if st != prev or row.status_since is None:
+                    row.status_since = now
+
+                event = None
+                if st in ('WARN', 'CRIT'):
+                    if st != prev or row.last_notified is None or \
+                            (st == 'CRIT' and (now - row.last_notified).total_seconds() >= repeat):
+                        event = st
+                        row.last_notified = now
+                elif st == 'OK' and prev in ('WARN', 'CRIT'):
+                    event = 'RECOVERED'
+                if event and elist:
+                    thr = ' / '.join(f'{n} {v:g}' for n, v in (('warn', row.warn), ('crit', row.crit)) if v is not None)
+                    body = (f'Server health on {host}: {row.label}\n'
+                            f'State: {event}\nValue: {row.value_str}\nDetail: {row.detail}\n'
+                            f'Thresholds (>=): {thr or "none"}\nTime: {now_str}')
+                    ok, err = send_notification_email(
+                        elist.get_emails(), f'[WATCHDOG HEALTH {event}] {host}: {row.label}', body, cfg)
+                    _log_notification(db, 'HEALTH', row.id, row.label, event, body, elist.get_emails(), ok, err)
+            except Exception as exc:
+                logger.exception('Error processing health check %s: %s', rd.get('key'), exc)
+        for key, row in rows.items():          # e.g. an unmounted disk
+            if key not in seen and key.startswith('disk:'):
+                db.session.delete(row)
+        db.session.commit()
+
+
 def _autostart_iocs(db, ids):
     from concurrent.futures import ThreadPoolExecutor
     from .models import SoftIOC, ActionLog
@@ -882,6 +950,16 @@ def start_watchdog(app):
         max_instances=1,
         misfire_grace_time=interval,
     )
+    _scheduler.add_job(
+        func=check_health,
+        args=[app],
+        trigger='interval',
+        seconds=max(interval, 30),
+        id='health_watchdog',
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=30,
+    )
     _scheduler.start()
     logger.info('Watchdog started — check interval %ds', interval)
 
@@ -897,6 +975,7 @@ def restart_watchdog(app, new_interval):
         try:
             _scheduler.reschedule_job('watchdog', trigger='interval', seconds=new_interval)
             _scheduler.reschedule_job('ioc_watchdog', trigger='interval', seconds=new_interval)
+            _scheduler.reschedule_job('health_watchdog', trigger='interval', seconds=max(new_interval, 30))
             logger.info('Watchdog rescheduled to %ds', new_interval)
         except Exception as exc:
             logger.warning('reschedule_job failed (%s); watchdog keeps current interval', exc)

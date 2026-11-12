@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Server Health — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0"><i class="bi bi-heart-pulse"></i> Server Health
+    <small class="text-muted fs-6">{{ hostname }}</small></h4>
+  <form method="post" action="{{ url_for('admin.health_check_now') }}">
+    <button class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat"></i> Check now</button>
+  </form>
+</div>
+
+<form method="post" action="{{ url_for('admin.health_save') }}">
+<div class="card shadow-sm mb-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Status</th><th>Check</th><th>Value</th><th>Detail</th>
+          <th style="width:110px" title="WARN when the value is at or above this">Warn &ge;</th>
+          <th style="width:110px" title="CRIT when the value is at or above this">Critical &ge;</th>
+          <th class="text-center">Enabled</th><th>Last checked</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in checks %}
+        <tr class="{{ '' if c.enabled else 'text-muted' }}">
+          <td><span class="badge {{ status_badge(c.status) }}">{{ c.status if c.enabled else 'OFF' }}</span></td>
+          <td>{{ c.label }}</td>
+          <td class="text-nowrap">{{ c.value_str or '—' }}</td>
+          <td class="small">{{ c.detail or '' }}</td>
+          <td><input type="text" name="warn_{{ c.id }}" class="form-control form-control-sm"
+                     value="{{ '%g' % c.warn if c.warn is not none else '' }}" placeholder="never"></td>
+          <td><input type="text" name="crit_{{ c.id }}" class="form-control form-control-sm"
+                     value="{{ '%g' % c.crit if c.crit is not none else '' }}" placeholder="never"></td>
+          <td class="text-center"><input type="checkbox" class="form-check-input" name="enabled_{{ c.id }}"
+                     {{ 'checked' if c.enabled }}></td>
+          <td class="small">{{ localdt(c.last_checked, '%H:%M:%S') if c.last_checked else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-3">
+          No readings yet — click <em>Check now</em> (the watchdog also checks every 30 s or its check interval).
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body row g-3">
+    <div class="col-md-5">
+      <label class="form-label fw-semibold">Send alerts to</label>
+      <select name="email_list_id" class="form-select form-select-sm">
+        <option value="">— No email alerts (dashboard only) —</option>
+        {% for el in email_lists %}
+        <option value="{{ el.id }}" {{ 'selected' if email_list_id == el.id | string }}>{{ el.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Alerts when a check turns WARN/CRIT (after two bad readings in a row), a repeat
+        for CRIT at the default repeat interval, and a message when it recovers.</div>
+    </div>
+    <div class="col-md-7">
+      <label class="form-label fw-semibold">Ignore failed systemd units</label>
+      <input type="text" name="ignore_units" class="form-control form-control-sm"
+             value="{{ ignore_units }}" placeholder="e.g. httpd.service kafka.service insights-client.service">
+      <div class="form-text">Space-separated unit names that are known to be failed and should not count.</div>
+    </div>
+  </div>
+</div>
+<button class="btn btn-primary btn-sm"><i class="bi bi-save"></i> Save</button>
+</form>
+{% endblock %}

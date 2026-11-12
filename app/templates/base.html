@@ -72,6 +72,12 @@
           </a>
         </li>
         <li class="nav-item">
+          <a class="nav-link {{ 'active' if request.endpoint == 'admin.health' }}"
+             href="{{ url_for('admin.health') }}">
+            <i class="bi bi-heart-pulse"></i> Health
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link {{ 'active' if request.endpoint == 'admin.logs' }}"
              href="{{ url_for('admin.logs') }}">
             <i class="bi bi-journal-text"></i> Logs

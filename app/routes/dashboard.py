@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, render_template, jsonify
 from .. import format_duration, format_memory
-from ..models import PVMonitor, CompoundRule, ProcessMonitor, SoftIOC, get_category_colors
+from ..models import PVMonitor, CompoundRule, ProcessMonitor, SoftIOC, HealthCheck, get_category_colors
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,8 @@ def index():
         hard_ioc_groups=_group_by_category([i for i in iocs if i.is_hard]),
         soft_ioc_groups=_group_by_category([i for i in iocs if not i.is_hard]),
         rules=rules,
+        health_checks=HealthCheck.query.filter_by(enabled=True).order_by(HealthCheck.key).all(),
+        hostname=__import__('socket').gethostname(),
         ok_count=ok_count,
         alarm_count=alarm_count,
         disconnected_count=disc_count,
@@ -166,6 +168,8 @@ def api_status():
         'rules': rule_data,
         'processes': proc_data,
         'iocs': ioc_data,
+        'health': [{'id': h.id, 'status': h.status, 'value': h.value_str or '', 'detail': h.detail or ''}
+                   for h in HealthCheck.query.filter_by(enabled=True).order_by(HealthCheck.key).all()],
         'ok_count': enabled_statuses.count('OK'),
         'alarm_count': enabled_statuses.count('ALARM'),
         'disconnected_count': sum(1 for s in enabled_statuses if s not in ('OK', 'ALARM')),

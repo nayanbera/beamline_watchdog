@@ -11,7 +11,8 @@ from werkzeug.security import check_password_hash
 from .. import db, limiter
 from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
-                      Recipient, CARRIERS, get_category_colors, PVChangeHistory, SoftIOC)
+                      Recipient, CARRIERS, get_category_colors, PVChangeHistory, SoftIOC,
+                      HealthCheck)
 from .. import ioc_utils
 
 logger = logging.getLogger(__name__)
@@ -1506,3 +1507,72 @@ def pv_history_restore(hist_id):
     ts = entry.changed_at.replace(tzinfo=ZoneInfo('UTC')).astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
     flash(f'Restored "{pv.pv_name}" to its state from {ts} ({tz_name}).', 'success')
     return redirect(url_for('admin.pv_history'))
+
+
+# ---------------------------------------------------------------------------
+# Server health (the computer the watchdog runs on)
+# ---------------------------------------------------------------------------
+
+def _set_config(key, value):
+    row = SystemConfig.query.filter_by(key=key).first()
+    if row:
+        row.value = value
+    else:
+        db.session.add(SystemConfig(key=key, value=value))
+
+
+@admin_bp.route('/health')
+@login_required
+def health():
+    import socket
+    cfg = {r.key: r.value for r in SystemConfig.query.all()}
+    return render_template('admin/health.html', hostname=socket.gethostname(),
+                           checks=HealthCheck.query.order_by(HealthCheck.key).all(),
+                           email_lists=EmailList.query.order_by(EmailList.name).all(),
+                           email_list_id=cfg.get('health_email_list_id', ''),
+                           ignore_units=cfg.get('health_ignore_units', ''))
+
+
+@admin_bp.route('/health/save', methods=['POST'])
+@login_required
+def health_save():
+    f = request.form
+    errors = []
+
+    def num(name):
+        v = f.get(name, '').strip()
+        if not v:
+            return None
+        try:
+            return float(v)
+        except ValueError:
+            errors.append(name)
+            return None
+
+    for hc in HealthCheck.query.all():
+        warn, crit = num(f'warn_{hc.id}'), num(f'crit_{hc.id}')
+        if warn is not None and crit is not None and crit < warn:
+            errors.append(hc.label)
+            continue
+        hc.warn, hc.crit = warn, crit
+        hc.enabled = f'enabled_{hc.id}' in f
+    elist = f.get('email_list_id', '')
+    _set_config('health_email_list_id', elist if elist.isdigit() else '')
+    _set_config('health_ignore_units', ' '.join(f.get('ignore_units', '').replace(',', ' ').split()))
+    if errors:
+        db.session.rollback()
+        flash('Not saved — thresholds must be numbers, with Critical >= Warning: ' + ', '.join(errors), 'danger')
+    else:
+        db.session.commit()
+        flash('Health settings saved.', 'success')
+    return redirect(url_for('admin.health'))
+
+
+@admin_bp.route('/health/check', methods=['POST'])
+@login_required
+def health_check_now():
+    from flask import current_app
+    from .. import watchdog
+    watchdog.check_health(current_app._get_current_object())
+    flash('Health checked.', 'success')
+    return redirect(url_for('admin.health'))

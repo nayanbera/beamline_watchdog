@@ -447,6 +447,14 @@ The **IOCs** page also has an *SSH key login for remote hosts* card listing ever
 your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
 without opening an IOC form.
 
+**Server health:** the *Health* tab monitors the computer the watchdog runs on — load per core (5 min),
+memory %, swap %, every mounted disk %, failed systemd units and clock synchronisation (the last two need
+`systemctl`/`timedatectl`). Each check has Warn/Critical thresholds (value &ge; threshold), can be disabled,
+and shows on the dashboard. Alerts go to the chosen email list when a check is WARN/CRIT for two readings in
+a row (so brief spikes are ignored), repeat for CRIT at the default repeat interval, and a RECOVERED message is
+sent. Known-failed units (e.g. `httpd.service`) can be listed under *Ignore failed systemd units*.
+Alerts appear in Logs with source *Server health*.
+
 **Efficient status checks:** each cycle the watchdog makes **one** SSH call per remote host (checking all of
 that host's IOCs together), and IOCs on the computer the watchdog runs on (host `localhost`, or this
 machine's own hostname with a blank SSH user or the watchdog's own user) are checked directly with no SSH

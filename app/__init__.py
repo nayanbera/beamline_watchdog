@@ -114,6 +114,9 @@ def _register_template_globals(app):
         'STOPPED':      'bg-danger',
         'HUNG':         'bg-danger',
         'UNREACHABLE':  'bg-warning text-dark',
+        # server health
+        'WARN':         'bg-warning text-dark',
+        'CRIT':         'bg-danger',
     }
 
     @app.template_global()

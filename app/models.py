@@ -417,3 +417,22 @@ class PVChangeHistory(db.Model):
     new_values  = db.Column(db.Text, nullable=False)          # JSON snapshot after change
 
     pv = db.relationship('PVMonitor', backref='change_history')
+
+
+class HealthCheck(db.Model):
+    """One health metric of the watchdog computer (load, memory, a disk, failed units...)."""
+    __tablename__ = 'health_checks'
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(200), unique=True, nullable=False)
+    label = db.Column(db.String(200), nullable=False)
+    warn = db.Column(db.Float)          # status WARN when value >= warn (blank = never)
+    crit = db.Column(db.Float)          # status CRIT when value >= crit (blank = never)
+    enabled = db.Column(db.Boolean, default=True)
+    status = db.Column(db.String(20), default='UNKNOWN')   # OK, WARN, CRIT, UNKNOWN
+    value = db.Column(db.Float)
+    value_str = db.Column(db.String(100))
+    detail = db.Column(db.String(500))
+    bad_count = db.Column(db.Integer, default=0)            # consecutive bad readings (debounce)
+    last_checked = db.Column(db.DateTime)
+    status_since = db.Column(db.DateTime)
+    last_notified = db.Column(db.DateTime)
