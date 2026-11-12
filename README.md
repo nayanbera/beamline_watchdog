@@ -447,6 +447,14 @@ The **IOCs** page also has an *SSH key login for remote hosts* card listing ever
 your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
 without opening an IOC form.
 
+**Old SSH servers:** hosts whose sshd only offers `ssh-rsa`/`ssh-dss` (error *"no matching host key type
+found. Their offer: ssh-rsa,ssh-dss"*) are handled by the **Old SSH server** checkbox next to the SSH key
+buttons. *Test connection* and *Set up key login* detect such hosts automatically, tick the box, and retry with
+legacy algorithms (`ssh-rsa` host/user keys, SHA-1 key exchange, CBC ciphers — appended to, not replacing, the
+modern defaults). For these hosts an **RSA** key (`~/.ssh/id_rsa`, created if missing) is installed, since very
+old sshd versions don't know ed25519. The flag is stored per IOC, so status checks, Start and Stop use the same
+options. Legacy algorithms are weak — keep such hosts on a trusted network and plan to upgrade them.
+
 **Server health:** the *Health* tab monitors the computer the watchdog runs on — load per core (5 min),
 memory %, swap %, every mounted disk %, failed systemd units and clock synchronisation (the last two need
 `systemctl`/`timedatectl`). Each check has Warn/Critical thresholds (value &ge; threshold), can be disabled,

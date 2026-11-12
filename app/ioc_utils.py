@@ -30,9 +30,19 @@ def _wrap(ioc, command):
     return command
 
 
-def _ssh_argv(host, user, port, command):
+# Extra algorithms for old sshd versions (e.g. only ssh-rsa/ssh-dss host keys, SHA-1 key exchange)
+# that current OpenSSH clients refuse by default. "+" appends to the defaults, so modern hosts still
+# negotiate the strong algorithms.
+LEGACY_OPTS = ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa',
+               '-o', 'KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
+               '-o', 'Ciphers=+aes128-cbc,aes256-cbc']
+
+
+def _ssh_argv(host, user, port, command, legacy=False):
     argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
             '-o', 'StrictHostKeyChecking=accept-new']
+    if legacy:
+        argv += LEGACY_OPTS
     if port:
         argv += ['-p', str(int(port))]
     return argv + [f'{user}@{host}' if user else host, '--', command]
@@ -50,7 +60,8 @@ def run_on_host(ioc, command, timeout=10):
     else:
         if not valid_host_fields(ioc.host, ioc.ssh_user):
             return None, 'Invalid host or user.'
-        argv = _ssh_argv(ioc.host, ioc.ssh_user, ioc.ssh_port, command)
+        argv = _ssh_argv(ioc.host, ioc.ssh_user, ioc.ssh_port, command,
+                         bool(getattr(ioc, 'ssh_legacy', False)))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -124,7 +135,7 @@ def _check_group(key, iocs):
     if key is None:                                   # this computer: no SSH needed
         argv = ['bash', '-c', command]
     else:
-        argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command)
+        argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command, bool(key[3]))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -154,7 +165,8 @@ def check_iocs_batch(iocs):
         if _runs_locally(ioc):
             key = None
         elif valid_host_fields(ioc.host, ioc.ssh_user):
-            key = (ioc.host.strip().lower(), ioc.ssh_user or '', ioc.ssh_port or 0)
+            key = (ioc.host.strip().lower(), ioc.ssh_user or '', ioc.ssh_port or 0,
+                   bool(ioc.ssh_legacy))
         else:
             results[ioc.id] = ('UNREACHABLE', 'Invalid host or user.')
             continue
@@ -223,7 +235,7 @@ def stop_ioc(ioc):
 # SSH key-login setup (used by the Add-IOC screen)
 # ---------------------------------------------------------------------------
 
-def _ssh_target(host, user, port):
+def _ssh_target(host, user, port, legacy=False):
     """Validate and return a SimpleNamespace usable with run_on_host, or (None, error)."""
     from types import SimpleNamespace
     host = (host or '').strip()
@@ -238,12 +250,22 @@ def _ssh_target(host, user, port):
             raise ValueError
     except (TypeError, ValueError):
         return None, 'Invalid SSH port.'
-    return SimpleNamespace(host=host, ssh_user=user, ssh_port=port, working_dir=None), None
+    return SimpleNamespace(host=host, ssh_user=user, ssh_port=port, working_dir=None,
+                           ssh_legacy=bool(legacy)), None
+
+
+def is_negotiation_error(out):
+    o = out or ''
+    return 'Unable to negotiate' in o or 'no matching host key type' in o or 'no matching key exchange' in o \
+        or 'no matching cipher' in o
 
 
 def explain_ssh_error(out):
     """Turn raw ssh stderr into a short hint."""
     o = out or ''
+    if is_negotiation_error(o):
+        return ('This host runs an old SSH server that needs legacy algorithms '
+                '(e.g. ssh-rsa). Tick "Old SSH server" and try again.')
     if 'Host key verification failed' in o:
         return 'Host key verification failed (the host key changed or is untrusted).'
     if 'Permission denied' in o:
@@ -257,15 +279,25 @@ def explain_ssh_error(out):
     return o[:300] or 'SSH failed.'
 
 
-def ssh_test(host, user=None, port=None):
-    """Non-interactive key-login test. Returns (ok, message)."""
-    target, err = _ssh_target(host, user, port)
+def ssh_test(host, user=None, port=None, legacy=False):
+    """
+    Non-interactive key-login test. Returns (ok, message, legacy_needed). If the host rejects
+    modern algorithms ("no matching host key type"), it is retried with the legacy options.
+    """
+    target, err = _ssh_target(host, user, port, legacy)
     if err:
-        return False, err
+        return False, err, False
     rc, out = run_on_host(target, 'true', timeout=12)
     if rc == 0:
-        return True, 'Key login works.'
-    return False, explain_ssh_error(out)
+        return True, 'Key login works' + (' (legacy SSH algorithms).' if legacy else '.'), legacy
+    if not legacy and is_negotiation_error(out):
+        target.ssh_legacy = True
+        rc, out2 = run_on_host(target, 'true', timeout=12)
+        if rc == 0:
+            return True, 'Key login works, using legacy SSH algorithms for this old host.', True
+        return False, ('Old SSH server detected (legacy algorithms are needed). '
+                       + explain_ssh_error(out2)), True
+    return False, explain_ssh_error(out), legacy
 
 
 def _ssh_dir():
@@ -273,23 +305,24 @@ def _ssh_dir():
     return os.path.join(os.path.expanduser('~'), '.ssh')
 
 
-def ensure_public_key():
+def ensure_public_key(rsa=False):
     """
     Return (pubkey_text, error) for the watchdog account's SSH key, creating an
-    ed25519 key pair if none exists.
+    ed25519 key pair if none exists. With rsa=True (old hosts that predate ed25519) the RSA
+    key id_rsa is used, and created (3072 bit) if missing.
     """
     import os
     d = _ssh_dir()
-    for name in ('id_ed25519', 'id_ecdsa', 'id_rsa'):
+    for name in (('id_rsa',) if rsa else ('id_ed25519', 'id_ecdsa', 'id_rsa')):
         pub = os.path.join(d, name + '.pub')
         if os.path.exists(pub) and os.path.exists(os.path.join(d, name)):
             with open(pub) as fh:
                 return fh.read().strip(), None
     try:
         os.makedirs(d, mode=0o700, exist_ok=True)
-        key = os.path.join(d, 'id_ed25519')
-        r = subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C',
-                            'beamline-watchdog', '-f', key],
+        key = os.path.join(d, 'id_rsa' if rsa else 'id_ed25519')
+        r = subprocess.run(['ssh-keygen', '-q', '-t', 'rsa' if rsa else 'ed25519'] +
+                           (['-b', '3072'] if rsa else []) + ['-N', '', '-C', 'beamline-watchdog', '-f', key],
                            capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
         if r.returncode != 0:
             return None, (r.stderr or 'ssh-keygen failed').strip()
@@ -299,25 +332,11 @@ def ensure_public_key():
         return None, str(exc)
 
 
-def install_ssh_key(host, user, port, password):
-    """
-    Install the watchdog's public key into the remote account's authorized_keys using a
-    one-time password login, then verify key login. The password is passed to ssh through
-    SSH_ASKPASS (environment of the child process only) and is never stored or logged.
-    Returns (ok, message).
-    """
+def _install_once(target, pubkey, password):
+    """One password login that appends `pubkey` to authorized_keys. Returns (ok, stderr_or_message)."""
     import os
     import stat
     import tempfile
-    target, err = _ssh_target(host, user, port)
-    if err:
-        return False, err
-    if not password:
-        return False, 'Password is required to install the key.'
-    pubkey, err = ensure_public_key()
-    if err:
-        return False, f'Could not get/create the watchdog SSH key: {err}'
-
     q = shlex.quote(pubkey)
     remote = ('umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && '
               f'(grep -qxF {q} ~/.ssh/authorized_keys || echo {q} >> ~/.ssh/authorized_keys) && '
@@ -329,6 +348,8 @@ def install_ssh_key(host, user, port, password):
             '-o', 'PreferredAuthentications=password,keyboard-interactive',
             '-o', 'NumberOfPasswordPrompts=1', '-o', 'ConnectTimeout=8',
             '-o', 'StrictHostKeyChecking=accept-new']
+    if target.ssh_legacy:
+        argv += [o for o in LEGACY_OPTS if o != 'PubkeyAcceptedKeyTypes=+ssh-rsa']
     if target.ssh_port:
         argv += ['-p', str(target.ssh_port)]
     argv += [dest, '--', remote]
@@ -354,12 +375,43 @@ def install_ssh_key(host, user, port, password):
             os.unlink(askpass)
         except OSError:
             pass
-
     if r.returncode != 0 or 'KEY_INSTALLED' not in r.stdout:
-        msg = explain_ssh_error(r.stderr)
-        if 'Permission denied' in (r.stderr or ''):
+        return False, r.stderr or ''
+    return True, ''
+
+
+def install_ssh_key(host, user, port, password, legacy=False):
+    """
+    Install the watchdog's public key into the remote account's authorized_keys using a
+    one-time password login, then verify key login. The password is passed to ssh through
+    SSH_ASKPASS (environment of the child process only) and is never stored or logged.
+    Old hosts that reject modern algorithms are retried with legacy options and an RSA key.
+    Returns (ok, message, legacy_used).
+    """
+    target, err = _ssh_target(host, user, port, legacy)
+    if err:
+        return False, err, False
+    if not password:
+        return False, 'Password is required to install the key.', False
+
+    def attempt(leg):
+        target.ssh_legacy = leg
+        pubkey, kerr = ensure_public_key(rsa=leg)
+        if kerr:
+            return False, f'Could not get/create the watchdog SSH key: {kerr}'
+        return _install_once(target, pubkey, password)
+
+    used = bool(legacy)
+    ok, out = attempt(used)
+    if not ok and not used and is_negotiation_error(out):
+        used = True
+        ok, out = attempt(True)
+    if not ok:
+        msg = explain_ssh_error(out)
+        if 'Permission denied' in (out or ''):
             msg = 'Password login was refused (wrong password, or the account does not allow password SSH).'
-        return False, msg
-    ok, msg = ssh_test(target.host, target.ssh_user, target.ssh_port)
-    return ok, ('Key installed and verified — key login works.' if ok
-                else f'Key installed, but the verification login failed: {msg}')
+        return False, msg, used
+    vok, vmsg, vleg = ssh_test(target.host, target.ssh_user, target.ssh_port, used)
+    return vok, ('Key installed and verified — key login works'
+                 + (' (old host: legacy algorithms + RSA key).' if used else '.') if vok
+                 else f'Key installed, but the verification login failed: {vmsg}'), used or vleg

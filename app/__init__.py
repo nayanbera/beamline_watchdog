@@ -216,6 +216,7 @@ def _run_migrations():
                 ('last_restart',   'DATETIME'),
                 ('procserv_port',  'INTEGER'),
                 ('autostart',      'INTEGER DEFAULT 0'),
+                ('ssh_legacy',     'INTEGER DEFAULT 0'),
                 ('user_stopped',   'INTEGER DEFAULT 0'),
                 ('ioc_mem_used',   'FLOAT'),
                 ('ioc_mem_total',  'FLOAT'),

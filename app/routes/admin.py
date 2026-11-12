@@ -1014,10 +1014,10 @@ def iocs():
     ssh_hosts = {}
     for i in SoftIOC.query.filter(SoftIOC.ioc_type != 'hard').all():
         if i.host and i.host not in ioc_utils.LOCAL_HOSTS:
-            e = ssh_hosts.setdefault((i.host, i.ssh_user or '', i.ssh_port or ''), [])
+            e = ssh_hosts.setdefault((i.host, i.ssh_user or '', i.ssh_port or '', bool(i.ssh_legacy)), [])
             e.append(i.name)
-    ssh_hosts = [dict(host=k[0], user=k[1], port=k[2], iocs=sorted(v))
-                 for k, v in sorted(ssh_hosts.items())]
+    ssh_hosts = [dict(host=k[0], user=k[1], port=k[2], legacy=k[3], iocs=sorted(v))
+                 for k, v in sorted(ssh_hosts.items(), key=lambda kv: tuple(map(str, kv[0])))]
     return render_template('admin/iocs.html', iocs=items, ssh_hosts=ssh_hosts,
                            hard_iocs=[i for i in items if i.is_hard],
                            soft_iocs=[i for i in items if not i.is_hard],
@@ -1104,6 +1104,7 @@ def ioc_import():
         db.session.add(SoftIOC(
             name=name, description=cmd[:500], ioc_type='soft', host=host,
             ssh_user=user, ssh_port=int(port) if port else None,
+            ssh_legacy='ssh_legacy' in form,
             procserv_port=pport, match_value=f'procServ port {pport}',
             start_command=f'{script} -s {shlex.quote(name)}',
             stats_prefix=name if 'prefix_from_name' in form else None,
@@ -1122,16 +1123,30 @@ def ioc_import():
 @login_required
 @limiter.limit("20 per minute")
 def ioc_ssh_test():
-    ok, msg = ioc_utils.ssh_test(request.form.get('host'), request.form.get('ssh_user'),
-                                 request.form.get('ssh_port'))
-    return jsonify(ok=ok, message=msg)
+    ok, msg, legacy = ioc_utils.ssh_test(request.form.get('host'), request.form.get('ssh_user'),
+                                         request.form.get('ssh_port'), bool(request.form.get('ssh_legacy')))
+    _persist_legacy(legacy)
+    return jsonify(ok=ok, message=msg, legacy=legacy)
+
+
+def _persist_legacy(legacy):
+    """From the IOC page's host table (persist=1): remember that this host needs legacy SSH."""
+    f = request.form
+    if not (legacy and f.get('persist') and f.get('host')):
+        return
+    q = SoftIOC.query.filter(SoftIOC.host == f['host'].strip())
+    for i in q.all():
+        if (i.ssh_user or '') == (f.get('ssh_user') or '').strip() and \
+                str(i.ssh_port or '') == (f.get('ssh_port') or '').strip():
+            i.ssh_legacy = True
+    db.session.commit()
 
 
 @admin_bp.route('/iocs/ssh-pubkey', methods=['POST'])
 @login_required
 @limiter.limit("20 per minute")
 def ioc_ssh_pubkey():
-    key, err = ioc_utils.ensure_public_key()
+    key, err = ioc_utils.ensure_public_key(rsa=bool(request.form.get('ssh_legacy')))
     if err:
         return jsonify(ok=False, message=err)
     return jsonify(ok=True, pubkey=key, message='Public key of the watchdog account.')
@@ -1142,11 +1157,13 @@ def ioc_ssh_pubkey():
 @limiter.limit("10 per minute")
 def ioc_ssh_setup():
     """One-time password login that installs the watchdog's public key on the host."""
-    ok, msg = ioc_utils.install_ssh_key(request.form.get('host'), request.form.get('ssh_user'),
-                                        request.form.get('ssh_port'), request.form.get('password'))
+    ok, msg, legacy = ioc_utils.install_ssh_key(request.form.get('host'), request.form.get('ssh_user'),
+                                                request.form.get('ssh_port'), request.form.get('password'),
+                                                bool(request.form.get('ssh_legacy')))
+    _persist_legacy(legacy)
     logger.info('SSH key setup for %s@%s by %s: %s', request.form.get('ssh_user') or '(default)',
                 request.form.get('host'), current_user.username, 'ok' if ok else 'failed')
-    return jsonify(ok=ok, message=msg)
+    return jsonify(ok=ok, message=msg, legacy=legacy)
 
 
 @admin_bp.route('/iocs/add', methods=['GET', 'POST'])
@@ -1200,6 +1217,7 @@ def ioc_form(ioc_id=None):
             # Monitor-only: no host, SSH or commands
             ioc.host = ''
             ioc.ssh_user = ioc.ssh_port = ioc.working_dir = None
+            ioc.ssh_legacy = False
             ioc.start_command = ioc.stop_command = ioc.status_command = None
             ioc.procserv_port = None
             ioc.match_value = ''
@@ -1208,6 +1226,7 @@ def ioc_form(ioc_id=None):
         else:
             ioc.host = f.get('host', '').strip() or 'localhost'
             ioc.ssh_user = f.get('ssh_user', '').strip() or None
+            ioc.ssh_legacy = 'ssh_legacy' in f
             ioc.working_dir = f.get('working_dir', '').strip() or None
             ioc.start_command = f.get('start_command', '').strip() or None
             ioc.stop_command = f.get('stop_command', '').strip() or None

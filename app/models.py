@@ -325,6 +325,7 @@ class SoftIOC(db.Model):
     host = db.Column(db.String(255), nullable=False, default='localhost')
     ssh_user = db.Column(db.String(100))        # blank = current user / ssh config default
     ssh_port = db.Column(db.Integer)            # blank = 22 / ssh config default
+    ssh_legacy = db.Column(db.Boolean, default=False)   # old sshd: allow ssh-rsa / SHA-1 kex / CBC ciphers
     working_dir = db.Column(db.String(500))     # cd here before start/stop/status commands
     # Control
     start_command = db.Column(db.String(1000))

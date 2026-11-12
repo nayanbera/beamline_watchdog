@@ -251,8 +251,8 @@
       <thead><tr><th>Host</th><th>SSH user</th><th>Port</th><th>IOCs</th><th>Key login</th><th></th></tr></thead>
       <tbody>
         {% for h in ssh_hosts %}
-        <tr class="ssh-host-row" data-host="{{ h.host }}" data-user="{{ h.user }}" data-port="{{ h.port }}">
-          <td>{{ h.host }}</td>
+        <tr class="ssh-host-row" data-host="{{ h.host }}" data-user="{{ h.user }}" data-port="{{ h.port }}" data-legacy="{{ 1 if h.legacy else '' }}">
+          <td>{{ h.host }}{% if h.legacy %} <span class="badge bg-secondary" title="Old SSH server: legacy algorithms enabled">legacy SSH</span>{% endif %}</td>
           <td>{{ h.user or '(default)' }}</td>
           <td>{{ h.port or 22 }}</td>
           <td class="small text-muted">{{ h.iocs | join(', ') }}</td>
@@ -350,7 +350,8 @@ function clearSelection() {
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
   async function post(row, url, extra) {
     const body = new URLSearchParams({host: row.dataset.host, ssh_user: row.dataset.user,
-                                      ssh_port: row.dataset.port, ...(extra || {})});
+                                      ssh_port: row.dataset.port,
+                                      ssh_legacy: row.dataset.legacy, persist: '1', ...(extra || {})});
     const r = await fetch(url, {method: 'POST', body, headers: {'X-CSRFToken': csrf}});
     if (!r.ok) throw new Error(r.status === 429 ? 'Too many attempts — wait a minute.' : 'HTTP ' + r.status);
     return r.json();

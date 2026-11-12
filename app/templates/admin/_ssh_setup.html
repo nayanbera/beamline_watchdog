@@ -12,6 +12,12 @@
       <button type="button" class="btn btn-sm btn-outline-secondary" id="ssh-key-btn">
         <i class="bi bi-eye"></i> Show public key
       </button>
+      <div class="form-check form-check-inline small mb-0 ms-2"
+           title="Tick for old Linux hosts whose sshd only offers ssh-rsa / ssh-dss ('no matching host key type found'). Detected automatically by Test connection.">
+        <input class="form-check-input" type="checkbox" name="ssh_legacy" id="ssh_legacy"
+               {{ 'checked' if (ioc is defined and ioc.ssh_legacy) or (form is defined and form.get('ssh_legacy')) }}>
+        <label class="form-check-label" for="ssh_legacy">Old SSH server</label>
+      </div>
       <span class="small" id="ssh-result"></span>
     </div>
 
@@ -42,13 +48,17 @@
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
   const val = n => (document.querySelector(`[name="${n}"]`) || {}).value || '';
   const result = document.getElementById('ssh-result');
+  const legacyBox = document.getElementById('ssh_legacy');
 
   async function post(url, extra) {
     const body = new URLSearchParams({host: val('host'), ssh_user: val('ssh_user'),
-                                      ssh_port: val('ssh_port'), ...(extra || {})});
+                                      ssh_port: val('ssh_port'),
+                                      ssh_legacy: legacyBox.checked ? '1' : '', ...(extra || {})});
     const r = await fetch(url, {method: 'POST', body, headers: {'X-CSRFToken': csrf}});
     if (!r.ok) throw new Error(r.status === 429 ? 'Too many attempts — wait a minute.' : `HTTP ${r.status}`);
-    return r.json();
+    const d = await r.json();
+    if (d.legacy) legacyBox.checked = true;   // old host detected: keep the flag for saving
+    return d;
   }
   function show(ok, text) {
     result.className = 'small ' + (ok ? 'text-success' : 'text-danger');
