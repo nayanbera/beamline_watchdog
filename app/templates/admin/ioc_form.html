@@ -86,7 +86,9 @@
                 Remote hosts are reached with <code>ssh</code> from the watchdog server using
                 <strong>key-based login</strong> (no password prompts). Test it first from the
                 server account: <code>ssh user@host true</code>. Use <code>localhost</code> to run on
-                the watchdog machine itself.
+                the watchdog machine itself — but if the watchdog runs as a <strong>systemd service</strong>,
+                IOCs started on <code>localhost</code> are killed whenever the service restarts. Use the
+                machine's own hostname instead (it starts the IOC through SSH, outside the service).
               </div>
             </div>
 

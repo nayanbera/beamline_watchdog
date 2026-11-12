@@ -437,6 +437,13 @@ categories from the `#` headings, and optionally the IOC name as devIocStats pre
 Terminal-server (`/usr/bin/telnet …`) lines are skipped by default because those are hard IOCs.
 Re-importing skips IOCs whose name or procServ port already exists.
 
+**systemd:** if the watchdog runs as a systemd service (default `KillMode=control-group`), anything
+started on host `localhost` is part of the service's cgroup and is killed when the service restarts.
+Give such IOCs the machine's own hostname (and an SSH user) so they start through `sshd` in a user
+session scope instead; this needs key-based `ssh user@thishost` to work for the service account and
+`KillUserProcesses=no` in logind (the usual default). Check where an IOC runs with
+`cat /proc/<pid>/cgroup`.
+
 **Environment:** commands for `localhost` IOCs inherit the watchdog server's environment (for
 example its conda env). If an IOC needs specific `LD_LIBRARY_PATH`/`PATH`/Python settings, set
 them in the start script, not in the watchdog.

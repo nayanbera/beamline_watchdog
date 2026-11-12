@@ -30,6 +30,7 @@
               <label class="form-label fw-semibold">Host <span class="text-danger">*</span></label>
               <input type="text" name="host" class="form-control font-monospace" required
                      value="{{ form.get('host', 'localhost') }}">
+              <small class="text-muted">If the watchdog runs as a systemd service, use this machine's hostname, not <code>localhost</code>, so the IOCs survive service restarts.</small>
             </div>
             <div class="col-md-4">
               <label class="form-label fw-semibold">SSH User</label>
