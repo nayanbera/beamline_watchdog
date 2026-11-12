@@ -447,6 +447,10 @@ The **IOCs** page also has an *SSH key login for remote hosts* card listing ever
 your soft IOCs, with **Test** / **Set up…** per host and **Test all**, so existing hosts can be set up
 without opening an IOC form.
 
+**Sorting:** click any column header in any table to sort (click again to reverse). Numbers, durations
+(`Up 2h 22m`) and memory sizes sort by value, empty cells (`—`) always go last, and the choice is kept
+while you stay in the browser tab. On paginated tables (logs) it sorts the rows on the current page.
+
 **Auto-start:** tick *Start automatically if it is not running* on a soft IOC and the watchdog runs its
 Start command once when it finds the IOC `STOPPED` (a) on its first check after the watchdog starts —
 e.g. after the server reboots — or (b) right after the IOC's host comes back from `UNREACHABLE`. Nothing
