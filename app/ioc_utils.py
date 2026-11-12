@@ -349,7 +349,7 @@ def _install_once(target, pubkey, password):
             '-o', 'NumberOfPasswordPrompts=1', '-o', 'ConnectTimeout=8',
             '-o', 'StrictHostKeyChecking=accept-new']
     if target.ssh_legacy:
-        argv += [o for o in LEGACY_OPTS if o != 'PubkeyAcceptedKeyTypes=+ssh-rsa']
+        argv += LEGACY_OPTS
     if target.ssh_port:
         argv += ['-p', str(target.ssh_port)]
     argv += [dest, '--', remote]
