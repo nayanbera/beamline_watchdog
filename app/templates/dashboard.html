@@ -311,7 +311,7 @@
 
 <!-- Soft IOCs -->
 {% if ioc_groups %}
-<h5 class="mt-2 mb-2"><i class="bi bi-hdd-network"></i> Soft IOC Status
+<h5 class="mt-2 mb-2"><i class="bi bi-hdd-network"></i> IOC Status
   {% if current_user.is_authenticated %}
   <a href="{{ url_for('admin.iocs') }}" class="btn btn-sm btn-outline-secondary ms-2">
     <i class="bi bi-gear"></i> Manage
@@ -320,7 +320,7 @@
 </h5>
   {% for cat_name, cat_iocs in ioc_groups %}
   {% set grp_id = 'iocgrp-' ~ loop.index %}
-  {% set down_in_group = cat_iocs | selectattr('status', 'in', ['STOPPED', 'UNREACHABLE']) | selectattr('enabled') | list | length %}
+  {% set down_in_group = cat_iocs | selectattr('status', 'in', ['STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED']) | selectattr('enabled') | list | length %}
   {% set cat_color = category_colors.get(cat_name, '#6c757d') %}
   <div class="card shadow-sm mb-3">
     <div class="card-header text-white d-flex align-items-center justify-content-between"
@@ -345,6 +345,7 @@
               <th>IOC Name</th>
               <th>Host</th>
               <th>Up / Down for</th>
+              <th>Uptime / CPU</th>
               <th>Last Checked</th>
               <th>Last Stopped</th>
               {% if current_user.is_authenticated %}<th>Control</th>{% endif %}
@@ -352,23 +353,26 @@
           </thead>
           <tbody>
             {% for ioc in cat_iocs %}
-            <tr id="ioc-row-{{ ioc.id }}" class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE') and ioc.enabled else ('text-muted' if not ioc.enabled else '') }}">
+            <tr id="ioc-row-{{ ioc.id }}" class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') and ioc.enabled else ('text-muted' if not ioc.enabled else '') }}">
               <td>
                 {% if not ioc.enabled %}
                   <span class="badge bg-secondary" id="ioc-badge-{{ ioc.id }}">DISABLED</span>
                 {% else %}
-                  <span class="badge {{ 'bg-success' if ioc.status == 'RUNNING' else ('bg-danger' if ioc.status == 'STOPPED' else ('bg-warning text-dark' if ioc.status == 'UNREACHABLE' else 'bg-secondary')) }}"
+                  <span class="badge {{ status_badge(ioc.status) }}"
                         id="ioc-badge-{{ ioc.id }}" title="{{ ioc.status_detail or '' }}">{{ ioc.status }}</span>
                 {% endif %}
               </td>
-              <td><strong>{{ ioc.name }}</strong>
+              <td><strong>{{ ioc.name }}</strong>{% if ioc.is_hard %} <span class="badge bg-dark">HARD</span>{% endif %}
                 {% if ioc.description %}<br><small class="text-muted">{{ ioc.description }}</small>{% endif %}
               </td>
               <td class="small"><code>{{ ioc.target }}</code></td>
               <td class="small text-nowrap" id="ioc-since-{{ ioc.id }}">
-                {% if ioc.enabled and ioc.status in ('RUNNING', 'STOPPED', 'UNREACHABLE') %}
+                {% if ioc.enabled and ioc.status != 'UNKNOWN' %}
                   <span class="{{ 'text-success' if ioc.status == 'RUNNING' else 'text-danger' }}">{{ 'Up' if ioc.status == 'RUNNING' else 'Down' }} {{ ioc.status_since | duration }}</span>
                 {% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td class="small text-nowrap" id="ioc-stats-{{ ioc.id }}">
+                {% if ioc.stats_prefix and ioc.ioc_uptime %}{{ ioc.ioc_uptime }}{% if ioc.ioc_cpu is not none %} <span class="text-muted">· {{ '%.1f'|format(ioc.ioc_cpu) }}%</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}
               </td>
               <td class="small" id="ioc-checked-{{ ioc.id }}">{{ localdt(ioc.last_checked, '%H:%M:%S %Z') }}</td>
               <td class="small" id="ioc-stopped-{{ ioc.id }}">
@@ -378,6 +382,7 @@
               </td>
               {% if current_user.is_authenticated %}
               <td class="text-nowrap">
+                {% if ioc.is_hard %}<span class="text-muted small">—</span>{% else %}
                 {% if ioc.start_command %}
                 <form method="POST" action="{{ url_for('admin.ioc_control', ioc_id=ioc.id, action='start') }}"
                       class="d-inline" onsubmit="return confirm('Start {{ ioc.name }} on {{ ioc.host }}?')">
@@ -400,6 +405,7 @@
                   <input type="hidden" name="next" value="{{ url_for('dashboard.index') }}">
                   <button class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-arrow-clockwise"></i></button>
                 </form>
+                {% endif %}
                 {% endif %}
               </td>
               {% endif %}
@@ -592,19 +598,23 @@ async function refresh() {
     (d.iocs || []).forEach(i => {
       const row = document.getElementById(`ioc-row-${i.id}`);
       if (!row) return;
-      const down = i.status === 'STOPPED' || i.status === 'UNREACHABLE';
+      const down = ['STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED'].includes(i.status);
       row.className = !i.enabled ? 'text-muted' : (down ? 'table-danger' : '');
       const badge = document.getElementById(`ioc-badge-${i.id}`);
       if (badge) {
-        const bc = i.status === 'RUNNING' ? 'bg-success' : (i.status === 'STOPPED' ? 'bg-danger'
-                 : (i.status === 'UNREACHABLE' ? 'bg-warning text-dark' : 'bg-secondary'));
+        const bc = {RUNNING: 'bg-success', STOPPED: 'bg-danger', HUNG: 'bg-danger',
+                    UNREACHABLE: 'bg-warning text-dark', DISCONNECTED: 'bg-warning text-dark'}[i.status] || 'bg-secondary';
         badge.textContent = i.enabled ? i.status : 'DISABLED';
         badge.className = `badge ${i.enabled ? bc : 'bg-secondary'}`;
         badge.title = i.status_detail || '';
       }
       const since = document.getElementById(`ioc-since-${i.id}`);
-      if (since) since.innerHTML = (i.enabled && (i.status === 'RUNNING' || down))
+      if (since) since.innerHTML = (i.enabled && i.status !== 'UNKNOWN')
         ? `<span class="${i.status === 'RUNNING' ? 'text-success' : 'text-danger'}">${i.status === 'RUNNING' ? 'Up' : 'Down'} ${i.since}</span>`
+        : '<span class="text-muted">—</span>';
+      const st = document.getElementById(`ioc-stats-${i.id}`);
+      if (st) st.innerHTML = i.uptime
+        ? `${i.uptime}${i.cpu !== null ? ` <span class="text-muted">· ${i.cpu}%</span>` : ''}`
         : '<span class="text-muted">—</span>';
       const chk = document.getElementById(`ioc-checked-${i.id}`);
       if (chk) chk.textContent = i.last_checked;

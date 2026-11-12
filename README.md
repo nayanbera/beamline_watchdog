@@ -409,24 +409,43 @@ public dashboard.
 
 ---
 
-## Soft IOCs (local and remote)
+## IOCs (soft and hard) and devIocStats
 
-The **Soft IOCs** tab starts, stops, restarts and monitors EPICS soft-IOCs on any host
-reachable over SSH. IOCs have categories, email lists, pause/auto-enable and bulk edit,
-exactly like PVs and processes. Use host `localhost` for IOCs on the watchdog machine.
+The **IOCs** tab monitors EPICS IOCs, with categories, email lists, pause/auto-enable and
+bulk edit like PVs and processes.
 
-**Requirements:** the account running the watchdog must be able to `ssh user@host` with
-key-based login (no password prompt), e.g. `ssh-copy-id user@host`. Test with
-`ssh user@host true` first. Host keys of new hosts are accepted automatically on first use.
+| Type | Control | Health signal |
+|------|---------|---------------|
+| **Soft IOC** | start / stop / restart over SSH | process check (`pgrep -f` or a custom status command), plus devIocStats if a prefix is set |
+| **Hard IOC** | none (monitor only) | devIocStats heartbeat (prefix required) |
 
-Per IOC you configure: host / SSH user / port, working directory, a process-match regex
-(`pgrep -f`; or a custom status command where exit 0 = running), and optional start and
-stop commands (default stop is `pkill -f <match>`). Start commands are run detached, so
-`./st.cmd` or `procServ ...` both work.
+**SSH (soft IOCs):** the account running the watchdog must be able to `ssh user@host` with
+key-based login (no password prompt); test with `ssh user@host true`. Use host `localhost`
+for IOCs on the watchdog machine. Per IOC: host / user / port, working directory, a
+process-match regex, optional status command (exit 0 = running), start and stop commands
+(default stop is `pkill -f <match>`). Start commands run detached.
 
-Statuses: `RUNNING`, `STOPPED` (process absent), `UNREACHABLE` (SSH failed or timed out —
-reported separately so a network problem isn't mistaken for a dead IOC). Email alerts are
-sent for stopped / unreachable / recovered, and start/stop actions appear in the Action Log.
+**devIocStats (optional for soft, required for hard):** enter the IOC's *stats prefix* (the
+`IOC=` macro it loads `iocAdminSoft.db` / the vxWorks/RTEMS equivalent with). The watchdog
+reads `<prefix>:HEARTBEAT`, `:UPTIME`, `:STARTTOD` and `:IOC_CPU_LOAD` in one parallel
+Channel Access call per cycle. A heartbeat that does not change, or an IOC that stops
+answering, for *Heartbeat Timeout* seconds (default 30) is reported as HUNG / DISCONNECTED.
+
+Combined state for soft IOCs with a prefix:
+
+| Process (SSH) | Heartbeat (CA) | Status |
+|---------------|----------------|--------|
+| running | alive | `RUNNING` |
+| running | frozen or no answer | `HUNG` (alive but not working, or CA/network problem) |
+| not running | any | `STOPPED` |
+| SSH failed | alive | `RUNNING` (note: SSH unavailable, control disabled) |
+| SSH failed | no answer | `UNREACHABLE` |
+
+Hard IOCs show `RUNNING`, `HUNG` (heartbeat frozen) or `DISCONNECTED` (no CA response).
+Email alerts are sent for stopped / hung / disconnected / unreachable / recovered, and an
+`IOC RESTARTED` alert when the start time (`STARTTOD`) changes while the IOC looked healthy,
+i.e. it restarted between two checks. Uptime and CPU load appear on the IOC list and the
+dashboard. Start/stop actions are recorded in the Action Log.
 
 ## Monitoring Network Device Reachability
 

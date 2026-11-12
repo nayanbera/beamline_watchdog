@@ -1026,13 +1026,12 @@ def ioc_form(ioc_id=None):
         f = request.form
         ioc.name = f.get('name', '').strip()
         ioc.description = f.get('description', '').strip() or None
-        ioc.host = f.get('host', '').strip() or 'localhost'
-        ioc.ssh_user = f.get('ssh_user', '').strip() or None
-        ioc.working_dir = f.get('working_dir', '').strip() or None
-        ioc.start_command = f.get('start_command', '').strip() or None
-        ioc.stop_command = f.get('stop_command', '').strip() or None
-        ioc.match_value = f.get('match_value', '').strip()
-        ioc.status_command = f.get('status_command', '').strip() or None
+        ioc.ioc_type = 'hard' if f.get('ioc_type') == 'hard' else 'soft'
+        old_prefix = ioc.stats_prefix
+        ioc.stats_prefix = f.get('stats_prefix', '').strip().rstrip(':') or None
+        if ioc.stats_prefix != old_prefix:   # different PVs: forget the old heartbeat state
+            ioc.hb_value = ioc.hb_changed_at = ioc.hb_bad_since = None
+            ioc.ioc_uptime = ioc.ioc_started = ioc.ioc_cpu = None
         ioc.notify_flag = 'notify_flag' in f
         was_enabled = ioc.enabled
         ioc.enabled = 'enabled' in f
@@ -1047,24 +1046,48 @@ def ioc_form(ioc_id=None):
             ioc.notify_interval = int(f.get('notify_interval', '3600').strip())
         except ValueError:
             ioc.notify_interval = 3600
+        try:
+            ioc.hb_timeout = int(f.get('hb_timeout', '30').strip() or 30)
+            if ioc.hb_timeout < 5:
+                raise ValueError
+        except ValueError:
+            errors['hb_timeout'] = 'Must be an integer ≥ 5 seconds.'
 
-        port = f.get('ssh_port', '').strip()
-        ioc.ssh_port = None
-        if port:
-            try:
-                ioc.ssh_port = int(port)
-                if not 1 <= ioc.ssh_port <= 65535:
-                    raise ValueError
-            except ValueError:
-                errors['ssh_port'] = 'Must be a port number (1-65535).'
-
+        if ioc.stats_prefix and not ioc_utils._SAFE_TOKEN.match(ioc.stats_prefix):
+            errors['stats_prefix'] = 'Invalid prefix (letters, digits, . - _ : [ ] only).'
         if not ioc.name:
             errors['name'] = 'Name is required.'
-        if not ioc.match_value:
-            errors['match_value'] = 'Process match is required.'
-        if ioc.host.lower() not in ioc_utils.LOCAL_HOSTS and \
-                not ioc_utils.valid_host_fields(ioc.host, ioc.ssh_user):
-            errors['host'] = 'Invalid host or SSH user (letters, digits, . - _ : only).'
+
+        if ioc.is_hard:
+            # Monitor-only: no host, SSH or commands
+            ioc.host = ''
+            ioc.ssh_user = ioc.ssh_port = ioc.working_dir = None
+            ioc.start_command = ioc.stop_command = ioc.status_command = None
+            ioc.match_value = ''
+            if not ioc.stats_prefix:
+                errors['stats_prefix'] = 'A devIocStats prefix is required for hard IOCs.'
+        else:
+            ioc.host = f.get('host', '').strip() or 'localhost'
+            ioc.ssh_user = f.get('ssh_user', '').strip() or None
+            ioc.working_dir = f.get('working_dir', '').strip() or None
+            ioc.start_command = f.get('start_command', '').strip() or None
+            ioc.stop_command = f.get('stop_command', '').strip() or None
+            ioc.match_value = f.get('match_value', '').strip()
+            ioc.status_command = f.get('status_command', '').strip() or None
+            port = f.get('ssh_port', '').strip()
+            ioc.ssh_port = None
+            if port:
+                try:
+                    ioc.ssh_port = int(port)
+                    if not 1 <= ioc.ssh_port <= 65535:
+                        raise ValueError
+                except ValueError:
+                    errors['ssh_port'] = 'Must be a port number (1-65535).'
+            if not ioc.match_value:
+                errors['match_value'] = 'Process match is required.'
+            if ioc.host.lower() not in ioc_utils.LOCAL_HOSTS and \
+                    not ioc_utils.valid_host_fields(ioc.host, ioc.ssh_user):
+                errors['host'] = 'Invalid host or SSH user (letters, digits, . - _ : only).'
 
         if not errors:
             if not ioc_id:
@@ -1114,6 +1137,9 @@ def ioc_control(ioc_id, action):
     if action not in ('start', 'stop', 'restart'):
         abort(404)
     ioc = SoftIOC.query.get_or_404(ioc_id)
+    if ioc.is_hard:
+        flash('Hard IOCs are monitor-only — they cannot be started or stopped here.', 'warning')
+        return redirect(url_for('admin.iocs'))
     if action == 'start':
         ok, out = ioc_utils.start_ioc(ioc)
         _log_ioc_action(ioc, 'START', ioc.start_command, ok, out)

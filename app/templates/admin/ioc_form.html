@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{{ 'Edit' if ioc_id else 'Add' }} Soft IOC — Admin{% endblock %}
+{% block title %}{{ 'Edit' if ioc_id else 'Add' }} IOC — Admin{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -8,7 +8,7 @@
       <div class="card-header bg-dark text-white">
         <h5 class="mb-0">
           <i class="bi bi-hdd-network"></i>
-          {{ 'Edit: ' + ioc.name if ioc_id else 'Add Soft IOC' }}
+          {{ 'Edit: ' + ioc.name if ioc_id else 'Add IOC' }}
         </h5>
       </div>
       <div class="card-body">
@@ -39,6 +39,45 @@
               </select>
             </div>
 
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">IOC Type</label>
+              <select name="ioc_type" id="ioc_type" class="form-select" onchange="updateType()">
+                <option value="soft" {{ 'selected' if not ioc.is_hard }}>Soft IOC (SSH-controlled)</option>
+                <option value="hard" {{ 'selected' if ioc.is_hard }}>Hard IOC (monitor only)</option>
+              </select>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">devIocStats Health Monitoring
+              <span class="badge bg-secondary fw-normal ms-1" id="stats-optional">optional</span></h6></div>
+
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Stats Prefix <span class="text-danger d-none" id="stats-req">*</span></label>
+              <input type="text" name="stats_prefix"
+                class="form-control font-monospace {{ 'is-invalid' if errors.get('stats_prefix') }}"
+                value="{{ ioc.stats_prefix or '' }}" placeholder="15IDA">
+              {% if errors.get('stats_prefix') %}<div class="invalid-feedback">{{ errors.stats_prefix }}</div>{% endif %}
+              <small class="text-muted">
+                The <code>IOC=</code> macro the IOC loads devIocStats with. The watchdog reads
+                <code>&lt;prefix&gt;:HEARTBEAT</code>, <code>:UPTIME</code>, <code>:STARTTOD</code>
+                and <code>:IOC_CPU_LOAD</code>.
+              </small>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Heartbeat Timeout (s)</label>
+              <input type="number" name="hb_timeout" min="5"
+                class="form-control {{ 'is-invalid' if errors.get('hb_timeout') }}"
+                value="{{ ioc.hb_timeout or 30 }}">
+              {% if errors.get('hb_timeout') %}<div class="invalid-feedback">{{ errors.hb_timeout }}</div>{% endif %}
+            </div>
+            <div class="col-12">
+              <small class="text-muted">
+                A heartbeat that stops changing (or an IOC that stops answering) for this long is
+                reported as <strong>HUNG</strong>. A change in start time raises an
+                <strong>IOC RESTARTED</strong> alert. Hard IOCs are monitored this way only.
+              </small>
+            </div>
+
+            <div class="col-12" id="soft-fields"><div class="row g-3">
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Host</h6></div>
 
             <div class="col-12">
@@ -55,7 +94,7 @@
               <label class="form-label fw-semibold">Host <span class="text-danger">*</span></label>
               <input type="text" name="host"
                 class="form-control font-monospace {{ 'is-invalid' if errors.get('host') }}"
-                value="{{ ioc.host or 'localhost' }}" placeholder="ioc-host.beamline.local" required>
+                value="{{ ioc.host or 'localhost' }}" placeholder="ioc-host.beamline.local">
               {% if errors.get('host') %}<div class="invalid-feedback">{{ errors.host }}</div>{% endif %}
             </div>
             <div class="col-md-4">
@@ -78,13 +117,13 @@
               <small class="text-muted">On the IOC host. The commands below run after <code>cd</code> into it.</small>
             </div>
 
-            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Monitoring</h6></div>
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Process Monitoring</h6></div>
 
             <div class="col-12">
               <label class="form-label fw-semibold">Process Match <span class="text-danger">*</span></label>
               <input type="text" name="match_value"
                 class="form-control font-monospace {{ 'is-invalid' if errors.get('match_value') }}"
-                value="{{ ioc.match_value or '' }}" placeholder="st.cmd motors" required>
+                value="{{ ioc.match_value or '' }}" placeholder="st.cmd motors">
               {% if errors.get('match_value') %}<div class="invalid-feedback">{{ errors.match_value }}</div>{% endif %}
               <small class="text-muted">
                 Regex matched against full command lines on the host (<code>pgrep -f</code>).
@@ -113,6 +152,8 @@
               <input type="text" name="stop_command" class="form-control font-monospace"
                 value="{{ ioc.stop_command or '' }}" placeholder="(blank = pkill -f <process match>)">
             </div>
+
+            </div></div>
 
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
 
@@ -165,7 +206,7 @@
           <hr>
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary">
-              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if ioc_id else 'Add Soft IOC' }}
+              <i class="bi bi-check-lg"></i> {{ 'Save Changes' if ioc_id else 'Add IOC' }}
             </button>
             <a href="{{ url_for('admin.iocs') }}" class="btn btn-secondary">Cancel</a>
           </div>
@@ -174,4 +215,16 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateType() {
+  const hard = document.getElementById('ioc_type').value === 'hard';
+  document.getElementById('soft-fields').classList.toggle('d-none', hard);
+  document.getElementById('stats-req').classList.toggle('d-none', !hard);
+  document.getElementById('stats-optional').classList.toggle('d-none', hard);
+}
+updateType();
+</script>
 {% endblock %}

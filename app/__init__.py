@@ -88,6 +88,11 @@ def _register_template_globals(app):
         'DISCONNECTED': 'bg-warning text-dark',
         'ERROR':        'bg-warning text-dark',
         'UNKNOWN':      'bg-secondary',
+        # soft/hard IOC states
+        'RUNNING':      'bg-success',
+        'STOPPED':      'bg-danger',
+        'HUNG':         'bg-danger',
+        'UNREACHABLE':  'bg-warning text-dark',
     }
 
     @app.template_global()
@@ -166,6 +171,24 @@ def _run_migrations():
         existing = {row[1] for row in result}
         if 'category_id' not in existing:
             conn.execute(text('ALTER TABLE process_monitors ADD COLUMN category_id INTEGER REFERENCES categories(id)'))
+
+        result = conn.execute(text("PRAGMA table_info(soft_iocs)"))
+        existing = {row[1] for row in result}
+        if existing:   # table already created by an earlier version
+            for col, typedef in [
+                ('ioc_type',       "TEXT DEFAULT 'soft'"),
+                ('stats_prefix',   'TEXT'),
+                ('hb_timeout',     'INTEGER DEFAULT 30'),
+                ('hb_value',       'FLOAT'),
+                ('hb_changed_at',  'DATETIME'),
+                ('hb_bad_since',   'DATETIME'),
+                ('ioc_uptime',     'TEXT'),
+                ('ioc_started',    'TEXT'),
+                ('ioc_cpu',        'FLOAT'),
+                ('last_restart',   'DATETIME'),
+            ]:
+                if col not in existing:
+                    conn.execute(text(f'ALTER TABLE soft_iocs ADD COLUMN {col} {typedef}'))
 
         result = conn.execute(text("PRAGMA table_info(categories)"))
         existing = {row[1] for row in result}

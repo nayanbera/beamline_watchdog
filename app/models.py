@@ -319,6 +319,9 @@ class SoftIOC(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     category = db.relationship('Category', backref='soft_iocs')
     # Where it runs
+    # ioc_type: 'soft' = controlled/checked over SSH (optionally + devIocStats)
+    #           'hard' = monitor-only via devIocStats heartbeat (no host/SSH/control)
+    ioc_type = db.Column(db.String(10), default='soft')
     host = db.Column(db.String(255), nullable=False, default='localhost')
     ssh_user = db.Column(db.String(100))        # blank = current user / ssh config default
     ssh_port = db.Column(db.Integer)            # blank = 22 / ssh config default
@@ -329,6 +332,9 @@ class SoftIOC(db.Model):
     # Status: pgrep -f match_value, unless status_command is set (exit 0 = running)
     match_value = db.Column(db.String(500), nullable=False)
     status_command = db.Column(db.String(1000))
+    # devIocStats (optional for soft IOCs, required for hard IOCs)
+    stats_prefix = db.Column(db.String(100))    # record prefix, e.g. '15IDA' -> 15IDA:HEARTBEAT
+    hb_timeout = db.Column(db.Integer, default=30)  # seconds of frozen/missing heartbeat => HUNG
     # Notifications / monitoring
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
@@ -345,10 +351,24 @@ class SoftIOC(db.Model):
     last_stopped = db.Column(db.DateTime)
     status_since = db.Column(db.DateTime)
     last_notified = db.Column(db.DateTime)
+    # devIocStats runtime state
+    hb_value = db.Column(db.Float)
+    hb_changed_at = db.Column(db.DateTime)      # when the heartbeat last changed
+    hb_bad_since = db.Column(db.DateTime)       # since when heartbeat is frozen/missing
+    ioc_uptime = db.Column(db.String(100))      # UPTIME string from the IOC
+    ioc_started = db.Column(db.String(100))     # STARTTOD string (changes on restart)
+    ioc_cpu = db.Column(db.Float)               # IOC CPU load, %
+    last_restart = db.Column(db.DateTime)       # last restart detected via STARTTOD
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
+    def is_hard(self):
+        return self.ioc_type == 'hard'
+
+    @property
     def target(self):
+        if self.is_hard:
+            return f'CA: {self.stats_prefix}'
         user = f'{self.ssh_user}@' if self.ssh_user else ''
         port = f':{self.ssh_port}' if self.ssh_port else ''
         return f'{user}{self.host}{port}'

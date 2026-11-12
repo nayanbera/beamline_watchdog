@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
-{% block title %}Soft IOCs — Admin{% endblock %}
+{% block title %}IOCs — Admin{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
-  <h4 class="mb-0"><i class="bi bi-hdd-network"></i> Soft IOCs</h4>
+  <h4 class="mb-0"><i class="bi bi-hdd-network"></i> IOCs</h4>
   <div class="d-flex gap-2">
     <a href="{{ url_for('admin.action_logs') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-clock-history"></i> Full Action Log
     </a>
     <a href="{{ url_for('admin.ioc_form') }}" class="btn btn-primary btn-sm">
-      <i class="bi bi-plus-lg"></i> Add Soft-IOC
+      <i class="bi bi-plus-lg"></i> Add IOC
     </a>
   </div>
 </div>
@@ -17,7 +17,7 @@
 <div class="row g-2 mb-3">
   <div class="col-md-5">
     <input type="text" id="proc-search" class="form-control form-control-sm"
-           placeholder="Search by name, host or process match…">
+           placeholder="Search by name, host, prefix or process match…">
   </div>
   <div class="col-md-4">
     <select id="cat-filter" class="form-select form-select-sm"
@@ -87,6 +87,7 @@
           <th>Category</th>
           <th>Host</th>
           <th>Process match</th>
+          <th>Uptime / CPU</th>
           <th>Up / Down for</th>
           <th>Notify</th>
           <th>Email List</th>
@@ -97,17 +98,14 @@
       </thead>
       <tbody>
         {% for ioc in iocs %}
-        <tr class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE') and ioc.enabled else '' }}"
-            data-search="{{ ioc.name }} {{ ioc.description or '' }} {{ ioc.host }} {{ ioc.match_value }} {{ ioc.category.name if ioc.category else '' }}">
+        <tr class="{{ 'table-danger' if ioc.status in ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED') and ioc.enabled else '' }}"
+            data-search="{{ ioc.name }} {{ ioc.description or '' }} {{ ioc.host }} {{ ioc.stats_prefix or '' }} {{ ioc.match_value }} {{ ioc.category.name if ioc.category else '' }}">
           <td>
             <input type="checkbox" class="form-check-input row-check"
                    value="{{ ioc.id }}" onchange="updateBulkBar()">
           </td>
           <td>
-            <span class="badge
-              {{ 'bg-success' if ioc.status == 'RUNNING' else
-                 ('bg-danger' if ioc.status == 'STOPPED' else
-                  ('bg-warning text-dark' if ioc.status == 'UNREACHABLE' else 'bg-secondary')) }}"
+            <span class="badge {{ status_badge(ioc.status) }}"
               {% if ioc.status_detail %}title="{{ ioc.status_detail }}"{% endif %}>
               {{ ioc.status }}
             </span>
@@ -120,6 +118,7 @@
           </td>
           <td>
             <strong>{{ ioc.name }}</strong>
+            {% if ioc.is_hard %}<span class="badge bg-dark ms-1" title="Monitor-only (devIocStats)">HARD</span>{% endif %}
             {% if ioc.description %}<br><small class="text-muted">{{ ioc.description }}</small>{% endif %}
           </td>
           <td>
@@ -129,9 +128,17 @@
             {% else %}<span class="text-muted small">—</span>{% endif %}
           </td>
           <td class="small"><code>{{ ioc.target }}</code></td>
-          <td class="small text-muted"><code>{{ ioc.status_command or ioc.match_value }}</code></td>
+          <td class="small text-muted">{% if ioc.is_hard %}<span class="text-muted">—</span>{% else %}<code>{{ ioc.status_command or ioc.match_value }}</code>{% endif %}</td>
           <td class="small text-nowrap">
-            {% if ioc.enabled and ioc.status in ('RUNNING', 'STOPPED', 'UNREACHABLE') %}
+            {% if ioc.stats_prefix and ioc.ioc_uptime %}
+              <span title="Started {{ ioc.ioc_started or '?' }}">{{ ioc.ioc_uptime }}</span>
+              {% if ioc.ioc_cpu is not none %}<br><span class="text-muted">CPU {{ '%.1f'|format(ioc.ioc_cpu) }}%</span>{% endif %}
+              {% if ioc.last_restart %}<br><span class="text-warning" title="Restart detected">↻ {{ localdt(ioc.last_restart, '%m-%d %H:%M') }}</span>{% endif %}
+            {% elif ioc.stats_prefix %}<span class="text-muted" title="No devIocStats response yet">n/a</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="small text-nowrap">
+            {% if ioc.enabled and ioc.status != 'UNKNOWN' %}
               <span class="{{ 'text-success' if ioc.status == 'RUNNING' else 'text-danger' }}">
                 {{ 'Up' if ioc.status == 'RUNNING' else 'Down' }} {{ ioc.status_since | duration }}
               </span>
@@ -147,6 +154,7 @@
             {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td class="text-nowrap">
+            {% if ioc.is_hard %}<span class="text-muted small">monitor only</span>{% else %}
             {% if ioc.start_command %}
             <form method="POST" action="{{ url_for('admin.ioc_control', ioc_id=ioc.id, action='start') }}"
                   class="d-inline" onsubmit="return confirm('Start \'{{ ioc.name }}\' on {{ ioc.host }}?')">
@@ -171,6 +179,7 @@
                 <i class="bi bi-arrow-clockwise"></i>
               </button>
             </form>
+            {% endif %}
             {% endif %}
           </td>
           <td class="text-nowrap">

@@ -146,6 +146,9 @@ def api_status():
             'last_checked': _fmt(i.last_checked, tz, '%H:%M:%S %Z'),
             'last_stopped': _fmt(i.last_stopped, tz, '%Y-%m-%d %H:%M:%S'),
             'since': format_duration(i.status_since),
+            'is_hard': i.is_hard,
+            'uptime': i.ioc_uptime or '',
+            'cpu': None if i.ioc_cpu is None else round(i.ioc_cpu, 1),
         })
 
     enabled_statuses = [p['status'] for p in pv_data if p['enabled']]

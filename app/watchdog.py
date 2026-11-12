@@ -560,23 +560,150 @@ def check_all_pvs(app):
         db.session.commit()
 
 
+# Standard devIocStats record suffixes (iocAdminSoft / iocAdminVxWorks / iocAdminRTEMS)
+_STATS_SUFFIXES = ('HEARTBEAT', 'UPTIME', 'STARTTOD', 'IOC_CPU_LOAD')
+
+_IOC_EVENTS = {
+    # event: (heading, subject tag)
+    'STOPPED':      ('SOFT-IOC STOPPED',        'IOC STOPPED'),
+    'UNREACHABLE':  ('IOC UNREACHABLE',         'IOC UNREACHABLE'),
+    'HUNG':         ('IOC NOT RESPONDING',      'IOC HUNG'),
+    'DISCONNECTED': ('IOC NOT REACHABLE (CA)',  'IOC DISCONNECTED'),
+    'RECOVERED':    ('IOC RECOVERED',           'IOC RUNNING'),
+    'RESTARTED':    ('IOC RESTARTED',           'IOC RESTARTED'),
+}
+_IOC_BAD = ('STOPPED', 'UNREACHABLE', 'HUNG', 'DISCONNECTED')
+
+
+def _fetch_ioc_stats(iocs):
+    """
+    Read devIocStats PVs for every IOC that has a stats_prefix, in one parallel CA call.
+    Returns {ioc.id: {suffix: value}}; values are None for PVs that did not respond.
+    """
+    wanted = [i for i in iocs if i.stats_prefix]
+    if not wanted or not EPICS_AVAILABLE:
+        return {}
+    names = [f'{i.stats_prefix}:{sfx}' for i in wanted for sfx in _STATS_SUFFIXES]
+    try:
+        vals = epics.caget_many(names, as_string=False, as_numpy=False,
+                                timeout=2.0, connection_timeout=3.0)
+    except Exception as exc:
+        logger.warning('devIocStats read failed: %s', exc)
+        vals = [None] * len(names)
+    n = len(_STATS_SUFFIXES)
+    return {i.id: dict(zip(_STATS_SUFFIXES, vals[k * n:(k + 1) * n]))
+            for k, i in enumerate(wanted)}
+
+
+def _apply_stats(ioc, stats, now):
+    """
+    Update the IOC's devIocStats fields from `stats`.
+    Returns (hb_state, restarted): hb_state is 'OK', 'STALE', 'DISCONNECTED', 'PENDING'
+    (heartbeat missing but not yet for hb_timeout seconds) or None (no prefix). A frozen
+    heartbeat only counts as STALE once it has not changed for hb_timeout seconds.
+    """
+    if not ioc.stats_prefix or stats is None:
+        return None, False
+    hb = stats.get('HEARTBEAT')
+    timeout = ioc.hb_timeout or 30
+    restarted = False
+
+    if hb is None:
+        ioc.hb_bad_since = ioc.hb_bad_since or now
+        state = 'DISCONNECTED'
+    else:
+        try:
+            hbf = float(hb)
+        except (TypeError, ValueError):
+            hbf = None
+        if hbf is not None and hbf != ioc.hb_value:
+            ioc.hb_value = hbf
+            ioc.hb_changed_at = now
+            ioc.hb_bad_since = None
+            state = 'OK'
+        else:
+            if ioc.hb_changed_at is None:
+                ioc.hb_changed_at = now
+            ioc.hb_bad_since = None
+            frozen = (now - ioc.hb_changed_at).total_seconds()
+            state = 'STALE' if frozen >= timeout else 'OK'
+        started = stats.get('STARTTOD')
+        started = str(started).strip() if started not in (None, '') else None
+        if started and ioc.ioc_started and started != ioc.ioc_started:
+            restarted = True
+            ioc.last_restart = now
+        if started:
+            ioc.ioc_started = started
+        up = stats.get('UPTIME')
+        ioc.ioc_uptime = str(up).strip() if up not in (None, '') else ioc.ioc_uptime
+        cpu = stats.get('IOC_CPU_LOAD')
+        try:
+            ioc.ioc_cpu = float(cpu) if cpu is not None else None
+        except (TypeError, ValueError):
+            ioc.ioc_cpu = None
+
+    if state == 'DISCONNECTED' and (now - ioc.hb_bad_since).total_seconds() < timeout:
+        return 'PENDING', False   # give a transient CA hiccup time to clear
+    return state, restarted
+
+
+def _combine_ioc_status(ioc, proc, hb_state):
+    """
+    Merge the process-level result `proc` ((status, detail) from SSH, or None for hard
+    IOCs) with the heartbeat state into one (status, detail).
+    """
+    if ioc.is_hard:
+        if hb_state == 'STALE':
+            return 'HUNG', 'Heartbeat is frozen (IOC reachable but not running)'
+        if hb_state == 'DISCONNECTED':
+            return 'DISCONNECTED', 'No Channel Access response from the IOC'
+        if hb_state == 'OK':
+            return 'RUNNING', None
+        if hb_state == 'PENDING':           # transient: keep the previous status
+            return ioc.status or 'UNKNOWN', ioc.status_detail
+        return 'UNKNOWN', None
+
+    status, detail = proc
+    if hb_state == 'PENDING':
+        hb_state = None
+    if not ioc.stats_prefix:
+        return status, detail
+    if status == 'STOPPED':
+        return 'STOPPED', detail
+    if status == 'UNREACHABLE':
+        if hb_state == 'OK':
+            # SSH is down but the IOC itself answers: it is running, control is unavailable
+            return 'RUNNING', (f'SSH check failed ({detail}); '
+                               'IOC still answers over Channel Access')
+        return status, detail
+    # process is RUNNING
+    if hb_state == 'STALE':
+        return 'HUNG', 'Process is running but the heartbeat is frozen'
+    if hb_state == 'DISCONNECTED':
+        return 'HUNG', 'Process is running but the IOC does not answer over Channel Access'
+    return 'RUNNING', None
+
+
 def _ioc_body(ioc, now_str, event):
-    head = {'ALARM': 'SOFT-IOC STOPPED', 'UNREACHABLE': 'SOFT-IOC HOST UNREACHABLE',
-            'RECOVERED': 'SOFT-IOC RECOVERED'}[event]
-    return (
-        f"EPICS PV Watchdog — {head}\n"
-        f"{'='*50}\n"
-        f"IOC         : {ioc.name}\n"
-        f"Host        : {ioc.target}\n"
-        f"Description : {ioc.description or 'N/A'}\n\n"
-        f"Status : {ioc.status}{' — ' + ioc.status_detail if ioc.status_detail else ''}\n"
-        f"Time   : {now_str}\n\n"
-        f"This is an automated message from EPICS PV Watchdog.\n"
-    )
+    head = _IOC_EVENTS[event][0]
+    lines = [
+        f"EPICS PV Watchdog — {head}",
+        '=' * 50,
+        f"IOC         : {ioc.name} ({ioc.ioc_type})",
+        f"Host        : {ioc.target}",
+        f"Description : {ioc.description or 'N/A'}",
+        '',
+        f"Status : {ioc.status}{' — ' + ioc.status_detail if ioc.status_detail else ''}",
+    ]
+    if ioc.stats_prefix:
+        lines.append(f"Uptime : {ioc.ioc_uptime or 'N/A'}   (started {ioc.ioc_started or 'N/A'})")
+    lines += [f"Time   : {now_str}", '',
+              'This is an automated message from EPICS PV Watchdog.', '']
+    return '\n'.join(lines)
 
 
 def check_iocs(app):
-    """Check every soft-IOC (SSH calls run in parallel). Called by APScheduler."""
+    """Check every IOC: SSH/process state (soft) + devIocStats heartbeat. Called by APScheduler."""
     from concurrent.futures import ThreadPoolExecutor
     with app.app_context():
         from . import db
@@ -595,56 +722,64 @@ def check_iocs(app):
             return
 
         def _check(ioc):
+            if ioc.is_hard:
+                return None
             try:
                 return check_ioc(ioc)
             except Exception as exc:
                 logger.exception('IOC check failed for %s', ioc.name)
                 return 'UNREACHABLE', str(exc)[:500]
 
-        with ThreadPoolExecutor(max_workers=min(8, len(iocs))) as pool:
-            results = list(pool.map(_check, iocs))
+        soft = [i for i in iocs if not i.is_hard]
+        procs = {}
+        if soft:
+            with ThreadPoolExecutor(max_workers=min(8, len(soft))) as pool:
+                procs = dict(zip((i.id for i in soft), pool.map(_check, soft)))
+        all_stats = _fetch_ioc_stats(iocs)
 
-        for ioc, (status, detail) in zip(iocs, results):
+        for ioc in iocs:
             try:
+                hb_state, restarted = _apply_stats(ioc, all_stats.get(ioc.id), now) \
+                    if ioc.stats_prefix else (None, False)
+                status, detail = _combine_ioc_status(ioc, procs.get(ioc.id), hb_state)
+
                 if not ioc.enabled:
                     # Auto-enable: only re-enable once the IOC is running again
                     if status == 'RUNNING':
                         ioc.enabled = True
-                        ioc.status, ioc.status_detail = status, None
+                        ioc.status, ioc.status_detail = status, detail
                         ioc.last_checked = ioc.status_since = ioc.auto_enabled_at = now
                         _log_notification(db, 'IOC', ioc.id, ioc.name, 'AUTO_ENABLED',
-                                          f"Soft-IOC {ioc.name} is running again; monitor "
+                                          f"IOC {ioc.name} is running again; monitor "
                                           f"re-enabled at {now_str}.", [], True, None)
                     continue
 
                 prev = ioc.status
                 ioc.last_checked = now
                 ioc.status, ioc.status_detail = status, detail
-                if status == 'STOPPED' and prev != 'STOPPED':
+                if status in ('STOPPED', 'HUNG', 'DISCONNECTED') and prev != status:
                     ioc.last_stopped = now
 
                 event = None
                 if status == 'RUNNING':
-                    if prev in ('STOPPED', 'UNREACHABLE'):
+                    if prev in _IOC_BAD:
                         event = 'RECOVERED'
-                else:
-                    event = 'ALARM' if status == 'STOPPED' else 'UNREACHABLE'
+                    elif restarted:
+                        event = 'RESTARTED'     # restarted between two checks
+                elif status in _IOC_BAD:
                     ni = ioc.notify_interval or default_notify_interval
-                    if not (prev != status or ioc.last_notified is None or
-                            (now - ioc.last_notified).total_seconds() >= ni):
-                        event = None
-                    elif event:
+                    if prev != status or ioc.last_notified is None or \
+                            (now - ioc.last_notified).total_seconds() >= ni:
+                        event = status
                         ioc.last_notified = now
 
                 if event and ioc.notify_flag and ioc.email_list_id:
                     elist = EmailList.query.get(ioc.email_list_id)
                     if elist:
                         body = _ioc_body(ioc, now_str, event)
-                        subject = {'ALARM': 'SOFT-IOC STOPPED',
-                                   'UNREACHABLE': 'SOFT-IOC HOST UNREACHABLE',
-                                   'RECOVERED': 'SOFT-IOC RUNNING'}[event]
                         ok, err = send_notification_email(
-                            elist.get_emails(), f'[WATCHDOG {subject}] {ioc.name}', body, cfg)
+                            elist.get_emails(),
+                            f'[WATCHDOG {_IOC_EVENTS[event][1]}] {ioc.name}', body, cfg)
                         _log_notification(db, 'IOC', ioc.id, ioc.name, event, body,
                                           elist.get_emails(), ok, err)
 
