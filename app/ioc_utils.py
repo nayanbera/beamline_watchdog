@@ -33,16 +33,27 @@ def _wrap(ioc, command):
 # Extra algorithms for old sshd versions (e.g. only ssh-rsa/ssh-dss host keys, SHA-1 key exchange)
 # that current OpenSSH clients refuse by default. "+" appends to the defaults, so modern hosts still
 # negotiate the strong algorithms.
-LEGACY_OPTS = ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa',
-               '-o', 'KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
-               '-o', 'Ciphers=+aes128-cbc,aes256-cbc']
+LEGACY_LEVELS = {
+    1: ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa'],
+    2: ['-o', 'HostKeyAlgorithms=+ssh-rsa', '-o', 'PubkeyAcceptedKeyTypes=+ssh-rsa',
+        '-o', 'KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
+        '-o', 'Ciphers=+aes128-cbc,aes256-cbc'],
+}
 
 
-def _ssh_argv(host, user, port, command, legacy=False):
+def legacy_level(value):
+    """0 = modern, 1 = allow ssh-rsa, 2 = also SHA-1 key exchange and CBC ciphers.
+    Accepts ints, bools and form values ('', 'on', '1', '2')."""
+    if value in (None, '', False, 0, '0'):
+        return 0
+    return 2 if str(value) == '2' else 1
+
+
+def _ssh_argv(host, user, port, command, legacy=0):
     argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
             '-o', 'StrictHostKeyChecking=accept-new']
-    if legacy:
-        argv += LEGACY_OPTS
+    if legacy_level(legacy):
+        argv += LEGACY_LEVELS[legacy_level(legacy)]
     if port:
         argv += ['-p', str(int(port))]
     return argv + [f'{user}@{host}' if user else host, '--', command]
@@ -61,7 +72,7 @@ def run_on_host(ioc, command, timeout=10):
         if not valid_host_fields(ioc.host, ioc.ssh_user):
             return None, 'Invalid host or user.'
         argv = _ssh_argv(ioc.host, ioc.ssh_user, ioc.ssh_port, command,
-                         bool(getattr(ioc, 'ssh_legacy', False)))
+                         legacy_level(getattr(ioc, 'ssh_legacy', 0)))
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -135,7 +146,7 @@ def _check_group(key, iocs):
     if key is None:                                   # this computer: no SSH needed
         argv = ['bash', '-c', command]
     else:
-        argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command, bool(key[3]))
+        argv = _ssh_argv(key[0], key[1] or None, key[2] or None, command, key[3])
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL)
@@ -166,7 +177,7 @@ def check_iocs_batch(iocs):
             key = None
         elif valid_host_fields(ioc.host, ioc.ssh_user):
             key = (ioc.host.strip().lower(), ioc.ssh_user or '', ioc.ssh_port or 0,
-                   bool(ioc.ssh_legacy))
+                   legacy_level(ioc.ssh_legacy))
         else:
             results[ioc.id] = ('UNREACHABLE', 'Invalid host or user.')
             continue
@@ -235,7 +246,7 @@ def stop_ioc(ioc):
 # SSH key-login setup (used by the Add-IOC screen)
 # ---------------------------------------------------------------------------
 
-def _ssh_target(host, user, port, legacy=False):
+def _ssh_target(host, user, port, legacy=0):
     """Validate and return a SimpleNamespace usable with run_on_host, or (None, error)."""
     from types import SimpleNamespace
     host = (host or '').strip()
@@ -251,7 +262,7 @@ def _ssh_target(host, user, port, legacy=False):
     except (TypeError, ValueError):
         return None, 'Invalid SSH port.'
     return SimpleNamespace(host=host, ssh_user=user, ssh_port=port, working_dir=None,
-                           ssh_legacy=bool(legacy)), None
+                           ssh_legacy=legacy_level(legacy)), None
 
 
 def is_negotiation_error(out):
@@ -263,6 +274,9 @@ def is_negotiation_error(out):
 def explain_ssh_error(out):
     """Turn raw ssh stderr into a short hint."""
     o = out or ''
+    if 'error in libcrypto' in o:
+        return ('The system crypto library refused this host\'s algorithms (RHEL blocks SHA-1 and weak '
+                'key exchange). See "Old SSH servers" in the README.')
     if is_negotiation_error(o):
         return ('This host runs an old SSH server that needs legacy algorithms '
                 '(e.g. ssh-rsa). Tick "Old SSH server" and try again.')
@@ -279,25 +293,28 @@ def explain_ssh_error(out):
     return o[:300] or 'SSH failed.'
 
 
-def ssh_test(host, user=None, port=None, legacy=False):
+def ssh_test(host, user=None, port=None, legacy=0):
     """
-    Non-interactive key-login test. Returns (ok, message, legacy_needed). If the host rejects
-    modern algorithms ("no matching host key type"), it is retried with the legacy options.
+    Non-interactive key-login test. Returns (ok, message, legacy_level_needed). If the host
+    rejects modern algorithms ("no matching host key type"), it is retried with the minimal
+    legacy options (ssh-rsa), then with SHA-1 key exchange / CBC ciphers added.
     """
-    target, err = _ssh_target(host, user, port, legacy)
+    level = legacy_level(legacy)
+    target, err = _ssh_target(host, user, port, level)
     if err:
-        return False, err, False
-    rc, out = run_on_host(target, 'true', timeout=12)
-    if rc == 0:
-        return True, 'Key login works' + (' (legacy SSH algorithms).' if legacy else '.'), legacy
-    if not legacy and is_negotiation_error(out):
-        target.ssh_legacy = True
-        rc, out2 = run_on_host(target, 'true', timeout=12)
+        return False, err, 0
+    out = ''
+    while True:
+        rc, out = run_on_host(target, 'true', timeout=12)
         if rc == 0:
-            return True, 'Key login works, using legacy SSH algorithms for this old host.', True
-        return False, ('Old SSH server detected (legacy algorithms are needed). '
-                       + explain_ssh_error(out2)), True
-    return False, explain_ssh_error(out), legacy
+            return True, 'Key login works' + (f' (legacy SSH level {level}).' if level else '.'), level
+        if not is_negotiation_error(out) or level >= 2:
+            break
+        level += 1                                  # try again with more legacy algorithms
+        target.ssh_legacy = level
+    if level > legacy_level(legacy) or (level and is_negotiation_error(out)):
+        return False, ('Old SSH server detected. ' + explain_ssh_error(out)), level
+    return False, explain_ssh_error(out), level
 
 
 def _ssh_dir():
@@ -349,7 +366,7 @@ def _install_once(target, pubkey, password):
             '-o', 'NumberOfPasswordPrompts=1', '-o', 'ConnectTimeout=8',
             '-o', 'StrictHostKeyChecking=accept-new']
     if target.ssh_legacy:
-        argv += LEGACY_OPTS
+        argv += LEGACY_LEVELS[target.ssh_legacy]
     if target.ssh_port:
         argv += ['-p', str(target.ssh_port)]
     argv += [dest, '--', remote]
@@ -380,7 +397,7 @@ def _install_once(target, pubkey, password):
     return True, ''
 
 
-def install_ssh_key(host, user, port, password, legacy=False):
+def install_ssh_key(host, user, port, password, legacy=0):
     """
     Install the watchdog's public key into the remote account's authorized_keys using a
     one-time password login, then verify key login. The password is passed to ssh through
@@ -401,11 +418,11 @@ def install_ssh_key(host, user, port, password, legacy=False):
             return False, f'Could not get/create the watchdog SSH key: {kerr}'
         return _install_once(target, pubkey, password)
 
-    used = bool(legacy)
+    used = legacy_level(legacy)
     ok, out = attempt(used)
-    if not ok and not used and is_negotiation_error(out):
-        used = True
-        ok, out = attempt(True)
+    while not ok and is_negotiation_error(out) and used < 2:
+        used += 1
+        ok, out = attempt(used)
     if not ok:
         msg = explain_ssh_error(out)
         if 'Permission denied' in (out or ''):
@@ -414,4 +431,4 @@ def install_ssh_key(host, user, port, password, legacy=False):
     vok, vmsg, vleg = ssh_test(target.host, target.ssh_user, target.ssh_port, used)
     return vok, ('Key installed and verified — key login works'
                  + (' (old host: legacy algorithms + RSA key).' if used else '.') if vok
-                 else f'Key installed, but the verification login failed: {vmsg}'), used or vleg
+                 else f'Key installed, but the verification login failed: {vmsg}'), max(used, vleg or 0)

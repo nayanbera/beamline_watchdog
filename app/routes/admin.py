@@ -1014,7 +1014,8 @@ def iocs():
     ssh_hosts = {}
     for i in SoftIOC.query.filter(SoftIOC.ioc_type != 'hard').all():
         if i.host and i.host not in ioc_utils.LOCAL_HOSTS:
-            e = ssh_hosts.setdefault((i.host, i.ssh_user or '', i.ssh_port or '', bool(i.ssh_legacy)), [])
+            e = ssh_hosts.setdefault((i.host, i.ssh_user or '', i.ssh_port or '',
+                                                       ioc_utils.legacy_level(i.ssh_legacy)), [])
             e.append(i.name)
     ssh_hosts = [dict(host=k[0], user=k[1], port=k[2], legacy=k[3], iocs=sorted(v))
                  for k, v in sorted(ssh_hosts.items(), key=lambda kv: tuple(map(str, kv[0])))]
@@ -1104,7 +1105,7 @@ def ioc_import():
         db.session.add(SoftIOC(
             name=name, description=cmd[:500], ioc_type='soft', host=host,
             ssh_user=user, ssh_port=int(port) if port else None,
-            ssh_legacy='ssh_legacy' in form,
+            ssh_legacy=ioc_utils.legacy_level(form.get('ssh_legacy')),
             procserv_port=pport, match_value=f'procServ port {pport}',
             start_command=f'{script} -s {shlex.quote(name)}',
             stats_prefix=name if 'prefix_from_name' in form else None,
@@ -1124,7 +1125,7 @@ def ioc_import():
 @limiter.limit("20 per minute")
 def ioc_ssh_test():
     ok, msg, legacy = ioc_utils.ssh_test(request.form.get('host'), request.form.get('ssh_user'),
-                                         request.form.get('ssh_port'), bool(request.form.get('ssh_legacy')))
+                                         request.form.get('ssh_port'), request.form.get('ssh_legacy'))
     _persist_legacy(legacy)
     return jsonify(ok=ok, message=msg, legacy=legacy)
 
@@ -1138,7 +1139,7 @@ def _persist_legacy(legacy):
     for i in q.all():
         if (i.ssh_user or '') == (f.get('ssh_user') or '').strip() and \
                 str(i.ssh_port or '') == (f.get('ssh_port') or '').strip():
-            i.ssh_legacy = True
+            i.ssh_legacy = max(ioc_utils.legacy_level(i.ssh_legacy), legacy)
     db.session.commit()
 
 
@@ -1146,7 +1147,7 @@ def _persist_legacy(legacy):
 @login_required
 @limiter.limit("20 per minute")
 def ioc_ssh_pubkey():
-    key, err = ioc_utils.ensure_public_key(rsa=bool(request.form.get('ssh_legacy')))
+    key, err = ioc_utils.ensure_public_key(rsa=bool(ioc_utils.legacy_level(request.form.get('ssh_legacy'))))
     if err:
         return jsonify(ok=False, message=err)
     return jsonify(ok=True, pubkey=key, message='Public key of the watchdog account.')
@@ -1159,7 +1160,7 @@ def ioc_ssh_setup():
     """One-time password login that installs the watchdog's public key on the host."""
     ok, msg, legacy = ioc_utils.install_ssh_key(request.form.get('host'), request.form.get('ssh_user'),
                                                 request.form.get('ssh_port'), request.form.get('password'),
-                                                bool(request.form.get('ssh_legacy')))
+                                                request.form.get('ssh_legacy'))
     _persist_legacy(legacy)
     logger.info('SSH key setup for %s@%s by %s: %s', request.form.get('ssh_user') or '(default)',
                 request.form.get('host'), current_user.username, 'ok' if ok else 'failed')
@@ -1217,7 +1218,7 @@ def ioc_form(ioc_id=None):
             # Monitor-only: no host, SSH or commands
             ioc.host = ''
             ioc.ssh_user = ioc.ssh_port = ioc.working_dir = None
-            ioc.ssh_legacy = False
+            ioc.ssh_legacy = 0
             ioc.start_command = ioc.stop_command = ioc.status_command = None
             ioc.procserv_port = None
             ioc.match_value = ''
@@ -1226,7 +1227,7 @@ def ioc_form(ioc_id=None):
         else:
             ioc.host = f.get('host', '').strip() or 'localhost'
             ioc.ssh_user = f.get('ssh_user', '').strip() or None
-            ioc.ssh_legacy = 'ssh_legacy' in f
+            ioc.ssh_legacy = ioc_utils.legacy_level(f.get('ssh_legacy'))
             ioc.working_dir = f.get('working_dir', '').strip() or None
             ioc.start_command = f.get('start_command', '').strip() or None
             ioc.stop_command = f.get('stop_command', '').strip() or None

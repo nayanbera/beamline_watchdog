@@ -450,8 +450,9 @@ without opening an IOC form.
 **Old SSH servers:** hosts whose sshd only offers `ssh-rsa`/`ssh-dss` (error *"no matching host key type
 found. Their offer: ssh-rsa,ssh-dss"*) are handled by the **Old SSH server** checkbox next to the SSH key
 buttons. *Test connection* and *Set up key login* detect such hosts automatically, tick the box, and retry with
-legacy algorithms (`ssh-rsa` host/user keys, SHA-1 key exchange, CBC ciphers — appended to, not replacing, the
-modern defaults). For these hosts an **RSA** key (`~/.ssh/id_rsa`, created if missing) is installed, since very
+legacy algorithms in two steps — level 1 allows `ssh-rsa` host/user keys only; level 2 also adds SHA-1 key
+exchange and CBC ciphers, and is used only if level 1 still fails (the options are appended to, not replacing,
+the modern defaults). On RHEL 9 the system crypto policy can still refuse them (`error in libcrypto`). For these hosts an **RSA** key (`~/.ssh/id_rsa`, created if missing) is installed, since very
 old sshd versions don't know ed25519. The flag is stored per IOC, so status checks, Start and Stop use the same
 options. Legacy algorithms are weak — keep such hosts on a trusted network and plan to upgrade them.
 

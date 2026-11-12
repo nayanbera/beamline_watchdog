@@ -15,6 +15,7 @@
       <div class="form-check form-check-inline small mb-0 ms-2"
            title="Tick for old Linux hosts whose sshd only offers ssh-rsa / ssh-dss ('no matching host key type found'). Detected automatically by Test connection.">
         <input class="form-check-input" type="checkbox" name="ssh_legacy" id="ssh_legacy"
+               value="{{ (ioc.ssh_legacy if ioc is defined and ioc.ssh_legacy else 0) or (form.get('ssh_legacy') if form is defined else 0) or 1 }}"
                {{ 'checked' if (ioc is defined and ioc.ssh_legacy) or (form is defined and form.get('ssh_legacy')) }}>
         <label class="form-check-label" for="ssh_legacy">Old SSH server</label>
       </div>
@@ -53,11 +54,11 @@
   async function post(url, extra) {
     const body = new URLSearchParams({host: val('host'), ssh_user: val('ssh_user'),
                                       ssh_port: val('ssh_port'),
-                                      ssh_legacy: legacyBox.checked ? '1' : '', ...(extra || {})});
+                                      ssh_legacy: legacyBox.checked ? legacyBox.value : '', ...(extra || {})});
     const r = await fetch(url, {method: 'POST', body, headers: {'X-CSRFToken': csrf}});
     if (!r.ok) throw new Error(r.status === 429 ? 'Too many attempts — wait a minute.' : `HTTP ${r.status}`);
     const d = await r.json();
-    if (d.legacy) legacyBox.checked = true;   // old host detected: keep the flag for saving
+    if (d.legacy) { legacyBox.checked = true; legacyBox.value = d.legacy; }   // old host detected: keep it for saving
     return d;
   }
   function show(ok, text) {

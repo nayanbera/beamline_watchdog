@@ -251,8 +251,8 @@
       <thead><tr><th>Host</th><th>SSH user</th><th>Port</th><th>IOCs</th><th>Key login</th><th></th></tr></thead>
       <tbody>
         {% for h in ssh_hosts %}
-        <tr class="ssh-host-row" data-host="{{ h.host }}" data-user="{{ h.user }}" data-port="{{ h.port }}" data-legacy="{{ 1 if h.legacy else '' }}">
-          <td>{{ h.host }}{% if h.legacy %} <span class="badge bg-secondary" title="Old SSH server: legacy algorithms enabled">legacy SSH</span>{% endif %}</td>
+        <tr class="ssh-host-row" data-host="{{ h.host }}" data-user="{{ h.user }}" data-port="{{ h.port }}" data-legacy="{{ h.legacy or '' }}">
+          <td>{{ h.host }}{% if h.legacy %} <span class="badge bg-secondary" title="Old SSH server: legacy algorithms enabled (level {{ h.legacy }})">legacy SSH</span>{% endif %}</td>
           <td>{{ h.user or '(default)' }}</td>
           <td>{{ h.port or 22 }}</td>
           <td class="small text-muted">{{ h.iocs | join(', ') }}</td>
