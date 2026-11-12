@@ -112,6 +112,8 @@
               {% if errors.get('ssh_port') %}<div class="invalid-feedback">{{ errors.ssh_port }}</div>{% endif %}
             </div>
 
+            {% include 'admin/_ssh_setup.html' %}
+
             <div class="col-12">
               <label class="form-label fw-semibold">Working Directory</label>
               <input type="text" name="working_dir" class="form-control font-monospace"

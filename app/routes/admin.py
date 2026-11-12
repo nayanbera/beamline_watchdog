@@ -1,9 +1,10 @@
 import json
+import logging
 import shlex
 import subprocess
 from datetime import datetime
 from flask import (Blueprint, render_template, redirect, url_for,
-                   flash, request, abort, Response)
+                   flash, request, abort, Response, jsonify)
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
 
@@ -12,6 +13,8 @@ from ..models import (Admin, EmailList, PVMonitor, CompoundRule,
                       ProcessMonitor, NotificationLog, SystemConfig, ActionLog, Category,
                       Recipient, CARRIERS, get_category_colors, PVChangeHistory, SoftIOC)
 from .. import ioc_utils
+
+logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -1105,6 +1108,37 @@ def ioc_import():
         msg += f' Skipped {len(skipped)} already present (same name or procServ port): ' + ', '.join(skipped) + '.'
     flash(msg, 'success')
     return redirect(url_for('admin.iocs'))
+
+
+@admin_bp.route('/iocs/ssh-test', methods=['POST'])
+@login_required
+@limiter.limit("20 per minute")
+def ioc_ssh_test():
+    ok, msg = ioc_utils.ssh_test(request.form.get('host'), request.form.get('ssh_user'),
+                                 request.form.get('ssh_port'))
+    return jsonify(ok=ok, message=msg)
+
+
+@admin_bp.route('/iocs/ssh-pubkey', methods=['POST'])
+@login_required
+@limiter.limit("20 per minute")
+def ioc_ssh_pubkey():
+    key, err = ioc_utils.ensure_public_key()
+    if err:
+        return jsonify(ok=False, message=err)
+    return jsonify(ok=True, pubkey=key, message='Public key of the watchdog account.')
+
+
+@admin_bp.route('/iocs/ssh-setup', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def ioc_ssh_setup():
+    """One-time password login that installs the watchdog's public key on the host."""
+    ok, msg = ioc_utils.install_ssh_key(request.form.get('host'), request.form.get('ssh_user'),
+                                        request.form.get('ssh_port'), request.form.get('password'))
+    logger.info('SSH key setup for %s@%s by %s: %s', request.form.get('ssh_user') or '(default)',
+                request.form.get('host'), current_user.username, 'ok' if ok else 'failed')
+    return jsonify(ok=ok, message=msg)
 
 
 @admin_bp.route('/iocs/add', methods=['GET', 'POST'])

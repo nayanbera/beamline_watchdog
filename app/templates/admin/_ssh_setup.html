@@ -1,0 +1,91 @@
+{# SSH key-login helper. Expects inputs named host, ssh_user and ssh_port in the same form. #}
+<div class="col-12" id="ssh-setup-box">
+  <div class="border rounded p-2 bg-light">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <strong class="small"><i class="bi bi-key"></i> SSH key login</strong>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="ssh-test-btn">
+        <i class="bi bi-plug"></i> Test connection
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-success" id="ssh-setup-toggle">
+        <i class="bi bi-shield-plus"></i> Set up key login…
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="ssh-key-btn">
+        <i class="bi bi-eye"></i> Show public key
+      </button>
+      <span class="small" id="ssh-result"></span>
+    </div>
+
+    <div id="ssh-setup-panel" class="mt-2 d-none">
+      <div class="small text-muted mb-1">
+        Enter the remote account's password <em>once</em>. The watchdog uses it to install its public
+        key on that host, then verifies key login. The password is not stored or logged.
+      </div>
+      <div class="input-group input-group-sm" style="max-width:420px">
+        <input type="password" id="ssh-password" class="form-control" autocomplete="off"
+               placeholder="Password for the SSH user on that host">
+        <button type="button" class="btn btn-success" id="ssh-setup-btn">Install key</button>
+      </div>
+    </div>
+
+    <div id="ssh-key-panel" class="mt-2 d-none small">
+      <div class="text-muted mb-1">
+        Manual alternative — append this line to <code>~/.ssh/authorized_keys</code> of the SSH user on
+        the remote host:
+      </div>
+      <textarea id="ssh-key-text" class="form-control form-control-sm font-monospace" rows="3" readonly></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const csrf = document.querySelector('meta[name="csrf-token"]').content;
+  const val = n => (document.querySelector(`[name="${n}"]`) || {}).value || '';
+  const result = document.getElementById('ssh-result');
+
+  async function post(url, extra) {
+    const body = new URLSearchParams({host: val('host'), ssh_user: val('ssh_user'),
+                                      ssh_port: val('ssh_port'), ...(extra || {})});
+    const r = await fetch(url, {method: 'POST', body, headers: {'X-CSRFToken': csrf}});
+    if (!r.ok) throw new Error(r.status === 429 ? 'Too many attempts — wait a minute.' : `HTTP ${r.status}`);
+    return r.json();
+  }
+  function show(ok, text) {
+    result.className = 'small ' + (ok ? 'text-success' : 'text-danger');
+    result.textContent = (ok ? '✔ ' : '✘ ') + text;
+  }
+  function busy(text) { result.className = 'small text-muted'; result.textContent = text; }
+
+  document.getElementById('ssh-test-btn').addEventListener('click', async () => {
+    busy('Testing…');
+    try { const d = await post('/admin/iocs/ssh-test'); show(d.ok, d.message); }
+    catch (e) { show(false, e.message); }
+  });
+
+  document.getElementById('ssh-setup-toggle').addEventListener('click', () => {
+    document.getElementById('ssh-setup-panel').classList.toggle('d-none');
+    document.getElementById('ssh-password').focus();
+  });
+
+  document.getElementById('ssh-setup-btn').addEventListener('click', async () => {
+    const pw = document.getElementById('ssh-password');
+    busy('Installing key…');
+    try {
+      const d = await post('/admin/iocs/ssh-setup', {password: pw.value});
+      show(d.ok, d.message);
+      if (d.ok) document.getElementById('ssh-setup-panel').classList.add('d-none');
+    } catch (e) { show(false, e.message); }
+    pw.value = '';   // never keep the password around
+  });
+
+  document.getElementById('ssh-key-btn').addEventListener('click', async () => {
+    const panel = document.getElementById('ssh-key-panel');
+    if (!panel.classList.contains('d-none')) { panel.classList.add('d-none'); return; }
+    try {
+      const d = await post('/admin/iocs/ssh-pubkey');
+      if (d.ok) { document.getElementById('ssh-key-text').value = d.pubkey; panel.classList.remove('d-none'); }
+      else show(false, d.message);
+    } catch (e) { show(false, e.message); }
+  });
+})();
+</script>

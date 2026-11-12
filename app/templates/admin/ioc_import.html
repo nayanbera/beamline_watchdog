@@ -42,6 +42,7 @@
               <input type="number" name="ssh_port" class="form-control"
                      value="{{ form.get('ssh_port', '') }}" placeholder="22">
             </div>
+            {% include 'admin/_ssh_setup.html' %}
             <div class="col-12">
               <label class="form-label fw-semibold">Full path of <code>start_ioc</code> on that host <span class="text-danger">*</span></label>
               <input type="text" name="start_script" class="form-control font-monospace" required

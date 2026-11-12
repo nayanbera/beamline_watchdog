@@ -437,6 +437,13 @@ categories from the `#` headings, and optionally the IOC name as devIocStats pre
 Terminal-server (`/usr/bin/telnet …`) lines are skipped by default because those are hard IOCs.
 Re-importing skips IOCs whose name or procServ port already exists.
 
+**SSH key login from the UI:** the Host section of *Add IOC* and *Import* has a **Test connection**
+button, **Set up key login…** (enter the remote account's password once; the watchdog installs its
+public key into that account's `authorized_keys`, then verifies key login — the password is passed
+to `ssh` via `SSH_ASKPASS` for that single command and is never stored or logged) and **Show public
+key** for installing it by hand. The key used is the watchdog account's `~/.ssh/id_ed25519` (created
+if no key exists). Password SSH must be allowed on the remote host for the one-time install.
+
 **systemd:** if the watchdog runs as a systemd service (default `KillMode=control-group`), anything
 started on host `localhost` is part of the service's cgroup and is killed when the service restarts.
 Give such IOCs the machine's own hostname (and an SSH user) so they start through `sshd` in a user

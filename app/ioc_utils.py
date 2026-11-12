@@ -132,3 +132,149 @@ def stop_ioc(ioc):
         cmd = f'pkill -f -- {shlex.quote(_pgrep_pattern(ioc.match_value))}'
     rc, out = run_on_host(ioc, cmd, timeout=20)
     return rc == 0, out or ('Stop issued.' if rc == 0 else f'Exit {rc}.')
+
+
+# ---------------------------------------------------------------------------
+# SSH key-login setup (used by the Add-IOC screen)
+# ---------------------------------------------------------------------------
+
+def _ssh_target(host, user, port):
+    """Validate and return a SimpleNamespace usable with run_on_host, or (None, error)."""
+    from types import SimpleNamespace
+    host = (host or '').strip()
+    user = (user or '').strip() or None
+    if host.lower() in LOCAL_HOSTS:
+        return None, 'Host is the local machine — no SSH is needed.'
+    if not valid_host_fields(host, user):
+        return None, 'Invalid host or SSH user.'
+    try:
+        port = int(port) if port not in (None, '') else None
+        if port is not None and not 1 <= port <= 65535:
+            raise ValueError
+    except (TypeError, ValueError):
+        return None, 'Invalid SSH port.'
+    return SimpleNamespace(host=host, ssh_user=user, ssh_port=port, working_dir=None), None
+
+
+def explain_ssh_error(out):
+    """Turn raw ssh stderr into a short hint."""
+    o = out or ''
+    if 'Host key verification failed' in o:
+        return 'Host key verification failed (the host key changed or is untrusted).'
+    if 'Permission denied' in o:
+        return 'Key login is not set up yet (permission denied).'
+    if 'Could not resolve hostname' in o:
+        return 'Host name could not be resolved.'
+    if 'Connection refused' in o:
+        return 'Connection refused — is sshd running and the port right?'
+    if 'timed out' in o.lower() or 'No route to host' in o:
+        return 'Host is unreachable (timed out / no route).'
+    return o[:300] or 'SSH failed.'
+
+
+def ssh_test(host, user=None, port=None):
+    """Non-interactive key-login test. Returns (ok, message)."""
+    target, err = _ssh_target(host, user, port)
+    if err:
+        return False, err
+    rc, out = run_on_host(target, 'true', timeout=12)
+    if rc == 0:
+        return True, 'Key login works.'
+    return False, explain_ssh_error(out)
+
+
+def _ssh_dir():
+    import os
+    return os.path.join(os.path.expanduser('~'), '.ssh')
+
+
+def ensure_public_key():
+    """
+    Return (pubkey_text, error) for the watchdog account's SSH key, creating an
+    ed25519 key pair if none exists.
+    """
+    import os
+    d = _ssh_dir()
+    for name in ('id_ed25519', 'id_ecdsa', 'id_rsa'):
+        pub = os.path.join(d, name + '.pub')
+        if os.path.exists(pub) and os.path.exists(os.path.join(d, name)):
+            with open(pub) as fh:
+                return fh.read().strip(), None
+    try:
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        key = os.path.join(d, 'id_ed25519')
+        r = subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C',
+                            'beamline-watchdog', '-f', key],
+                           capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            return None, (r.stderr or 'ssh-keygen failed').strip()
+        with open(key + '.pub') as fh:
+            return fh.read().strip(), None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def install_ssh_key(host, user, port, password):
+    """
+    Install the watchdog's public key into the remote account's authorized_keys using a
+    one-time password login, then verify key login. The password is passed to ssh through
+    SSH_ASKPASS (environment of the child process only) and is never stored or logged.
+    Returns (ok, message).
+    """
+    import os
+    import stat
+    import tempfile
+    target, err = _ssh_target(host, user, port)
+    if err:
+        return False, err
+    if not password:
+        return False, 'Password is required to install the key.'
+    pubkey, err = ensure_public_key()
+    if err:
+        return False, f'Could not get/create the watchdog SSH key: {err}'
+
+    q = shlex.quote(pubkey)
+    remote = ('umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && '
+              f'(grep -qxF {q} ~/.ssh/authorized_keys || echo {q} >> ~/.ssh/authorized_keys) && '
+              'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && '
+              '(command -v restorecon >/dev/null 2>&1 && restorecon -R ~/.ssh || true) && '
+              'echo KEY_INSTALLED')
+    dest = f'{target.ssh_user}@{target.host}' if target.ssh_user else target.host
+    argv = ['ssh', '-o', 'BatchMode=no', '-o', 'PubkeyAuthentication=no',
+            '-o', 'PreferredAuthentications=password,keyboard-interactive',
+            '-o', 'NumberOfPasswordPrompts=1', '-o', 'ConnectTimeout=8',
+            '-o', 'StrictHostKeyChecking=accept-new']
+    if target.ssh_port:
+        argv += ['-p', str(target.ssh_port)]
+    argv += [dest, '--', remote]
+
+    fd, askpass = tempfile.mkstemp(prefix='wd-askpass-')
+    try:
+        with os.fdopen(fd, 'w') as fh:
+            fh.write('#!/bin/sh\nprintf \'%s\\n\' "$WD_SSH_PASS"\n')
+        os.chmod(askpass, stat.S_IRWXU)
+        env = dict(os.environ, SSH_ASKPASS=askpass, SSH_ASKPASS_REQUIRE='force',
+                   DISPLAY=os.environ.get('DISPLAY') or ':0', WD_SSH_PASS=password)
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=25, env=env,
+                               stdin=subprocess.DEVNULL, start_new_session=True)
+        except subprocess.TimeoutExpired:
+            return False, 'Timed out while connecting.'
+        except Exception as exc:
+            return False, str(exc)
+        finally:
+            env.pop('WD_SSH_PASS', None)
+    finally:
+        try:
+            os.unlink(askpass)
+        except OSError:
+            pass
+
+    if r.returncode != 0 or 'KEY_INSTALLED' not in r.stdout:
+        msg = explain_ssh_error(r.stderr)
+        if 'Permission denied' in (r.stderr or ''):
+            msg = 'Password login was refused (wrong password, or the account does not allow password SSH).'
+        return False, msg
+    ok, msg = ssh_test(target.host, target.ssh_user, target.ssh_port)
+    return ok, ('Key installed and verified — key login works.' if ok
+                else f'Key installed, but the verification login failed: {msg}')
