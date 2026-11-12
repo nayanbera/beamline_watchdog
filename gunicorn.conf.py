@@ -7,6 +7,8 @@ bind = f"0.0.0.0:{os.environ.get('PORT', '5001')}"
 workers = 1
 worker_class = "sync"
 timeout = 120
+# On stop/restart, don't wait the default 30 s for in-flight SSH/CA checks.
+graceful_timeout = 10
 
 # Logs — directory is created by the start script
 accesslog = "logs/access.log"

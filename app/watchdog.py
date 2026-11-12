@@ -5,6 +5,7 @@ monitors system processes, and sends email notifications.
 import json
 import logging
 import os
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,6 +22,7 @@ except ImportError:
     logger.warning('pyepics not installed — PV values will read as DISCONNECTED')
 
 _scheduler = None
+_stopping = threading.Event()   # set at interpreter exit so in-flight checks stop launching work
 _autostart_seen = set()   # IOC ids already observed (reachable) since this process started
 
 
@@ -744,7 +746,7 @@ def check_iocs(app):
             return
 
         def _check(ioc):
-            if ioc.is_hard:
+            if ioc.is_hard or _stopping.is_set():
                 return None
             try:
                 return check_ioc(ioc)
@@ -889,6 +891,7 @@ def start_watchdog(app):
     logger.info('Watchdog started — check interval %ds', interval)
 
     import atexit
+    atexit.register(_stopping.set)
     atexit.register(lambda: _scheduler.shutdown(wait=False))
 
 
