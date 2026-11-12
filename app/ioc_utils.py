@@ -3,6 +3,7 @@ import logging
 import re
 import shlex
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +74,31 @@ def check_ioc(ioc):
 
 
 def start_ioc(ioc):
+    """
+    Run the start command detached, wait a few seconds, and report what it printed,
+    whether it exited (and with what status), and the IOC's status afterwards.
+    Returns (ok, message); ok is False if the command exited non-zero.
+    """
     if not ioc.start_command:
         return False, 'No start command configured.'
-    # Detach so the command (and the SSH session) returns immediately
-    cmd = (f'nohup sh -c {shlex.quote(ioc.start_command)} '
-           f'>/dev/null 2>&1 </dev/null & echo started')
-    rc, out = run_on_host(ioc, cmd, timeout=20)
-    return rc == 0, out or ('Start issued.' if rc == 0 else f'Exit {rc}.')
+    inner = shlex.quote(ioc.start_command)
+    cmd = (
+        'LOG=$(mktemp /tmp/wd-start.XXXXXX); '
+        f'nohup sh -c {inner} >"$LOG" 2>&1 </dev/null & pid=$!; '
+        'sleep 3; '
+        'if kill -0 $pid 2>/dev/null; then echo "[still running after 3 s]"; '
+        'else wait $pid; echo "[exited with status $?]"; fi; '
+        'tail -n 20 "$LOG"; rm -f "$LOG"'
+    )
+    rc, out = run_on_host(ioc, cmd, timeout=25)
+    if rc is None or rc != 0:
+        return False, out or f'Start failed (exit {rc}).'
+    m = re.search(r'\[exited with status (\d+)\]', out)
+    ok = not (m and m.group(1) != '0')
+    time.sleep(2)   # let a daemonising start settle before re-checking
+    status, detail = check_ioc(ioc)
+    msg = out.replace('\n', ' | ')
+    return ok, f'{msg} || status now: {status}' + (f' ({detail})' if detail else '')
 
 
 def stop_ioc(ioc):
