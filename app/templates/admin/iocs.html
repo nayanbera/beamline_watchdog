@@ -103,6 +103,7 @@
           <th>Memory</th>
           <th>Up / Down for</th>
           <th>Notify</th>
+          <th title="Auto-monitor: resumes monitoring when the IOC is running again. Auto-start: started if found stopped after a reboot/host recovery.">Auto</th>
           <th>Email List</th>
           <th>Last Stopped</th>
           {% if not hard %}<th>Control</th>{% endif %}
@@ -167,6 +168,14 @@
           <td class="text-center">
             <i class="bi {{ 'bi-bell-fill text-primary' if ioc.notify_flag else 'bi-bell-slash text-muted' }}"></i>
           </td>
+          <td class="text-nowrap text-center">
+            <i class="bi bi-eye{{ '-fill text-primary' if ioc.auto_enable else ' text-black-50 opacity-25' }}"
+               title="Auto-monitor: {{ 'on — monitoring resumes when the IOC is running again' if ioc.auto_enable else 'off' }}"></i>
+            {% if not hard %}
+            <i class="bi bi-power {{ 'text-success' if ioc.autostart else 'text-black-50 opacity-25' }}"
+               title="Auto-start on boot: {{ 'on — started if found stopped after a reboot or host recovery' if ioc.autostart else 'off' }}"></i>
+            {% endif %}
+          </td>
           <td class="small">{{ ioc.email_list.name if ioc.email_list else '—' }}</td>
           <td class="small">
             {% if ioc.last_stopped %}
@@ -218,7 +227,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="15" class="text-center text-muted py-3">
+        <tr><td colspan="16" class="text-center text-muted py-3">
           No {{ 'hard' if hard else 'soft' }} IOCs{% if cat_filter %} in this category{% endif %}.
           <a href="{{ url_for('admin.ioc_form') }}">Add one</a>.
         </td></tr>
