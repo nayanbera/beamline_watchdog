@@ -29,6 +29,22 @@
     return a.s.localeCompare(b.s, undefined, {numeric: true});
   }
 
+  // The cell covering column `col`, counting colspans (rows may merge columns, e.g. "no data" cells).
+  function cellAt(row, col) {
+    let c = 0;
+    for (const cell of row.cells) {
+      c += cell.colSpan || 1;
+      if (col < c) return cell;
+    }
+    return null;
+  }
+  // A data row spans exactly the header's columns; "No items" placeholders span them with one cell.
+  function isDataRow(row, ncols) {
+    let c = 0;
+    for (const cell of row.cells) c += cell.colSpan || 1;
+    return c === ncols && !(row.cells.length === 1 && ncols > 1);
+  }
+
   document.querySelectorAll('table.table').forEach((table, ti) => {
     const heads = table.tHead && table.tHead.rows.length === 1 ? [...table.tHead.rows[0].cells] : null;
     const body = table.tBodies[0];
@@ -46,8 +62,8 @@
     function apply() {
       if (!state) return;
       observer.disconnect();
-      const rows = [...body.rows].filter(r => r.cells.length === heads.length);
-      const keyed = rows.map(r => ({r, k: key(raw(r.cells[state.col]))}));
+      const rows = [...body.rows].filter(r => isDataRow(r, heads.length));
+      const keyed = rows.map(r => ({r, k: key(raw(cellAt(r, state.col)))}));
       keyed.sort((x, y) => {
         if (!x.k || !y.k) return !x.k && !y.k ? 0 : (!x.k ? 1 : -1);   // empties last
         return state.dir * compare(x.k, y.k);
