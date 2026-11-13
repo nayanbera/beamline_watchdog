@@ -433,7 +433,13 @@ def _install_once(target, pubkey, password):
               f'(grep -qxF {q} ~/.ssh/authorized_keys || echo {q} >> ~/.ssh/authorized_keys) && '
               'chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && '
               '(command -v restorecon >/dev/null 2>&1 && restorecon -R ~/.ssh || true) && '
-              'echo KEY_INSTALLED')
+              'echo KEY_INSTALLED; '
+              # State that decides whether sshd will accept the key (shown only if verification fails).
+              'echo "WD_HOME=$(stat -c %a ~ 2>/dev/null)"; echo "WD_SSHDIR=$(stat -c %a ~/.ssh 2>/dev/null)"; '
+              'echo "WD_AKEYS=$(stat -c %a ~/.ssh/authorized_keys 2>/dev/null)"; '
+              'echo "WD_SELINUX=$(getenforce 2>/dev/null)"; '
+              'echo "WD_CTX=$(ls -Z ~/.ssh/authorized_keys 2>/dev/null | cut -d" " -f1)"; '
+              'echo "WD_AKF=$(grep -hiE \'^[[:space:]]*AuthorizedKeysFile\' /etc/ssh/sshd_config 2>/dev/null | head -1)"')
     dest = f'{target.ssh_user}@{target.host}' if target.ssh_user else target.host
     argv = ['ssh', '-o', 'BatchMode=no', '-o', 'PubkeyAuthentication=no',
             '-o', 'PreferredAuthentications=password,keyboard-interactive',
@@ -468,7 +474,7 @@ def _install_once(target, pubkey, password):
             pass
     if r.returncode != 0 or 'KEY_INSTALLED' not in r.stdout:
         return False, r.stderr or ''
-    return True, ''
+    return True, r.stdout
 
 
 def install_ssh_key(host, user, port, password, legacy=0):
@@ -503,6 +509,31 @@ def install_ssh_key(host, user, port, password, legacy=0):
             msg = 'Password login was refused (wrong password, or the account does not allow password SSH).'
         return False, msg, used
     vok, vmsg, vleg = ssh_test(target.host, target.ssh_user, target.ssh_port, used)
-    return vok, ('Key installed and verified — key login works'
-                 + (' (old host: legacy algorithms + RSA key).' if used else '.') if vok
-                 else f'Key installed, but the verification login failed: {vmsg}'), max(used, vleg or 0)
+    if not vok:
+        hints = _remote_hints(out)
+        return False, (f'Key installed, but the verification login failed: {vmsg}'
+                       + (' Likely cause: ' + hints if hints else '')), max(used, vleg or 0)
+    return True, ('Key installed and verified — key login works'
+                  + (' (old host: legacy algorithms + RSA key).' if used else '.')), max(used, vleg or 0)
+
+
+def _remote_hints(out):
+    """Turn the WD_* facts printed by the install command into plain-language reasons sshd may reject the key."""
+    f = dict(l.split('=', 1) for l in (out or '').splitlines() if l.startswith('WD_') and '=' in l)
+    hints = []
+    def writable(mode):   # group/other write bit
+        try:
+            return bool(int(mode, 8) & 0o022)
+        except ValueError:
+            return False
+    if writable(f.get('WD_HOME', '')):
+        hints.append(f"the home directory is mode {f['WD_HOME']} (writable by group/others), so sshd ignores the key — run `chmod go-w ~` on that host")
+    if writable(f.get('WD_SSHDIR', '')) or writable(f.get('WD_AKEYS', '')):
+        hints.append('~/.ssh or authorized_keys is group/world-writable — run `chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys`')
+    ctx = f.get('WD_CTX', '')
+    if f.get('WD_SELINUX', '').lower() == 'enforcing' and ctx and 'ssh_home_t' not in ctx:
+        hints.append(f'SELinux context of authorized_keys is {ctx} — run `restorecon -Rv ~/.ssh` on that host')
+    akf = f.get('WD_AKF', '')
+    if akf and '.ssh/authorized_keys' not in akf:
+        hints.append(f'sshd reads keys from a different place ({akf.strip()})')
+    return '; '.join(hints) + '.' if hints else ''

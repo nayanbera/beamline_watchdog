@@ -1132,7 +1132,7 @@ def ioc_ssh_test():
 
 def _diag(ok, msg, legacy):
     """Troubleshooting details for a crypto-library failure (shown under the result)."""
-    if ok or 'crypto library' not in (msg or ''):
+    if ok or not any(t in (msg or '') for t in ('crypto library', 'verification login failed')):
         return ''
     f = request.form
     return ioc_utils.ssh_diagnose(f.get('host'), f.get('ssh_user'), f.get('ssh_port'), legacy)
