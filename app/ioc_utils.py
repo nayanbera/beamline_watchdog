@@ -435,7 +435,7 @@ def _install_once(target, pubkey, password):
               '(command -v restorecon >/dev/null 2>&1 && restorecon -R ~/.ssh || true) && '
               'echo KEY_INSTALLED; '
               # State that decides whether sshd will accept the key (shown only if verification fails).
-              'echo "WD_HOME=$(stat -c %a ~ 2>/dev/null)"; echo "WD_SSHDIR=$(stat -c %a ~/.ssh 2>/dev/null)"; '
+              'echo "WD_HOME=$(stat -c %a ~ 2>/dev/null)"; echo "WD_OWNER=$(stat -c %u ~ 2>/dev/null)"; echo "WD_UID=$(id -u)"; echo "WD_SSHDIR=$(stat -c %a ~/.ssh 2>/dev/null)"; '
               'echo "WD_AKEYS=$(stat -c %a ~/.ssh/authorized_keys 2>/dev/null)"; '
               'echo "WD_SELINUX=$(getenforce 2>/dev/null)"; '
               'echo "WD_CTX=$(ls -Z ~/.ssh/authorized_keys 2>/dev/null | cut -d" " -f1)"; '
@@ -528,6 +528,8 @@ def _remote_hints(out):
             return False
     if writable(f.get('WD_HOME', '')):
         hints.append(f"the home directory is mode {f['WD_HOME']} (writable by group/others), so sshd ignores the key — run `chmod go-w ~` on that host")
+    if f.get('WD_OWNER') and f.get('WD_UID') and f['WD_OWNER'] != f['WD_UID']:
+        hints.append('the home directory is owned by another user, so sshd ignores the key — run `sudo chown <user> <home>` on that host')
     if writable(f.get('WD_SSHDIR', '')) or writable(f.get('WD_AKEYS', '')):
         hints.append('~/.ssh or authorized_keys is group/world-writable — run `chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys`')
     ctx = f.get('WD_CTX', '')
