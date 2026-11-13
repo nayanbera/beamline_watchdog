@@ -233,7 +233,7 @@ def start_ioc(ioc):
     """
     Run the start command detached, wait a few seconds, and report what it printed,
     whether it exited (and with what status), and the IOC's status afterwards.
-    Returns (ok, message); ok is False if the command exited non-zero.
+    Returns (ok, message); ok is False if the command exited non-zero and the IOC is not RUNNING afterwards.
     """
     if not ioc.start_command:
         return False, 'No start command configured.'
@@ -260,6 +260,11 @@ def start_ioc(ioc):
     time.sleep(2)   # let a daemonising start settle before re-checking
     status, detail = check_ioc(ioc)
     msg = out.replace('\n', ' | ')
+    if not ok and status == 'RUNNING':
+        # Some start scripts exit non-zero after the IOC is up (e.g. a final telnet probe of the
+        # procServ port that procServ closes). What matters is that the IOC is running.
+        ok = True
+        msg = f'IOC is running; the start command exited non-zero, which is ignored. | {msg}'
     return ok, f'{msg} || status now: {status}' + (f' ({detail})' if detail else '')
 
 
