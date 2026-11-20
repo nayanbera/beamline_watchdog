@@ -223,6 +223,20 @@ def _proc_recovery_body(pm, now_str):
 # Core check function
 # ---------------------------------------------------------------------------
 
+class _Combined:
+    """Stands in for one EmailList: the merged, de-duplicated addresses of all of an item's lists."""
+
+    def __init__(self, item):
+        self._item = item
+
+    def get_emails(self):
+        return self._item.all_emails()
+
+
+def _notify_target(item):
+    return _Combined(item) if item.email_lists_all else None
+
+
 def _log_notification(db, source_type, source_id, source_name,
                        event_status, body, emails, success, err):
     from .models import NotificationLog
@@ -274,13 +288,13 @@ def check_all_pvs(app):
                         pv.status = 'DISCONNECTED'
                         pv_status_map[pv.id] = 'DISCONNECTED'
 
-                        if pv.notify_on_disconnect and pv.email_list_id:
+                        if pv.notify_on_disconnect and pv.email_list_ids:
                             ni = pv.notify_interval or default_notify_interval
                             should = (prev != 'DISCONNECTED' or
                                       pv.last_notified_disconnect is None or
                                       (now - pv.last_notified_disconnect).total_seconds() >= ni)
                             if should:
-                                elist = EmailList.query.get(pv.email_list_id)
+                                elist = _notify_target(pv)
                                 if elist:
                                     body = _pv_disconnect_body(pv, now_str)
                                     digest.add('PV', pv.id, pv.pv_name, 'DISCONNECTED', f'[WATCHDOG DISCONNECTED] {pv.display_name}', body, elist.get_emails())
@@ -323,8 +337,8 @@ def check_all_pvs(app):
                             pv.pending_since = None
 
                     # Reconnect notification (was disconnected, now readable)
-                    if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_id:
-                        elist = EmailList.query.get(pv.email_list_id)
+                    if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_ids:
+                        elist = _notify_target(pv)
                         if elist:
                             body = _pv_reconnect_body(pv, raw, now_str)
                             digest.add('PV', pv.id, pv.pv_name, 'RECONNECTED', f'[WATCHDOG RECONNECTED] {pv.display_name}', body, elist.get_emails())
@@ -338,12 +352,12 @@ def check_all_pvs(app):
                         if prev != 'ALARM':
                             pv.last_alarm = now
 
-                        if pv.notify_flag and pv.email_list_id:
+                        if pv.notify_flag and pv.email_list_ids:
                             ni = pv.notify_interval or default_notify_interval
                             should = (prev not in ('ALARM',) or pv.last_notified is None or
                                       (now - pv.last_notified).total_seconds() >= ni)
                             if should:
-                                elist = EmailList.query.get(pv.email_list_id)
+                                elist = _notify_target(pv)
                                 if elist:
                                     body = _pv_alarm_body(pv, raw, now_str)
                                     digest.add('PV', pv.id, pv.pv_name, 'ALARM', f'[WATCHDOG ALARM] {pv.display_name}', body, elist.get_emails())
@@ -352,8 +366,8 @@ def check_all_pvs(app):
                         pv_status_map[pv.id] = 'OK'
                         if prev == 'ALARM':
                             pv.status = 'OK'
-                            if pv.notify_flag and pv.email_list_id:
-                                elist = EmailList.query.get(pv.email_list_id)
+                            if pv.notify_flag and pv.email_list_ids:
+                                elist = _notify_target(pv)
                                 if elist:
                                     body = _pv_recovery_body(pv, raw, now_str)
                                     digest.add('PV', pv.id, pv.pv_name, 'RECOVERED', f'[WATCHDOG RECOVERED] {pv.display_name}', body, elist.get_emails())
@@ -424,20 +438,20 @@ def check_all_pvs(app):
                     rule.status = 'ALARM'
                     rule.last_alarm = now
 
-                    if rule.notify_flag and rule.email_list_id:
+                    if rule.notify_flag and rule.email_list_ids:
                         ni = rule.notify_interval or default_notify_interval
                         should = (prev != 'ALARM' or rule.last_notified is None or
                                   (now - rule.last_notified).total_seconds() >= ni)
                         if should:
-                            elist = EmailList.query.get(rule.email_list_id)
+                            elist = _notify_target(rule)
                             if elist:
                                 body = _rule_alarm_body(rule, pv_status_map, now_str)
                                 digest.add('RULE', rule.id, rule.name, 'ALARM', f'[WATCHDOG RULE ALARM] {rule.name}', body, elist.get_emails())
                                 rule.last_notified = now
                 else:
                     rule.status = 'OK'
-                    if prev == 'ALARM' and rule.notify_flag and rule.email_list_id:
-                        elist = EmailList.query.get(rule.email_list_id)
+                    if prev == 'ALARM' and rule.notify_flag and rule.email_list_ids:
+                        elist = _notify_target(rule)
                         if elist:
                             body = _rule_recovery_body(rule, now_str)
                             digest.add('RULE', rule.id, rule.name, 'RECOVERED', f'[WATCHDOG RULE RECOVERED] {rule.name}', body, elist.get_emails())
@@ -459,8 +473,8 @@ def check_all_pvs(app):
                 if running:
                     pm.status = 'RUNNING'
                     pm.pid = pid
-                    if prev == 'STOPPED' and pm.notify_flag and pm.email_list_id:
-                        elist = EmailList.query.get(pm.email_list_id)
+                    if prev == 'STOPPED' and pm.notify_flag and pm.email_list_ids:
+                        elist = _notify_target(pm)
                         if elist:
                             body = _proc_recovery_body(pm, now_str)
                             digest.add('PROCESS', pm.id, pm.name, 'RECOVERED', f'[WATCHDOG PROCESS RUNNING] {pm.name}', body, elist.get_emails())
@@ -469,12 +483,12 @@ def check_all_pvs(app):
                     pm.pid = None
                     if prev != 'STOPPED':
                         pm.last_stopped = now
-                    if pm.notify_flag and pm.email_list_id:
+                    if pm.notify_flag and pm.email_list_ids:
                         ni = pm.notify_interval or default_notify_interval
                         should = (prev != 'STOPPED' or pm.last_notified is None or
                                   (now - pm.last_notified).total_seconds() >= ni)
                         if should:
-                            elist = EmailList.query.get(pm.email_list_id)
+                            elist = _notify_target(pm)
                             if elist:
                                 body = _proc_stopped_body(pm, now_str)
                                 digest.add('PROCESS', pm.id, pm.name, 'ALARM', f'[WATCHDOG PROCESS STOPPED] {pm.name}', body, elist.get_emails())
@@ -763,8 +777,8 @@ def check_iocs(app):
                         event = status
                         ioc.last_notified = now
 
-                if event and ioc.notify_flag and ioc.email_list_id:
-                    elist = EmailList.query.get(ioc.email_list_id)
+                if event and ioc.notify_flag and ioc.email_list_ids:
+                    elist = _notify_target(ioc)
                     if elist:
                         body = _ioc_body(ioc, now_str, event)
                         digest.add('IOC', ioc.id, ioc.name, event, f'[WATCHDOG {_IOC_EVENTS[event][1]}] {ioc.name}', body, elist.get_emails())

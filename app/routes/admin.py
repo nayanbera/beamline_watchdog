@@ -34,6 +34,7 @@ def _pv_snapshot(pv):
         'clear_delay':         pv.clear_delay,
         'category_id':         pv.category_id,
         'email_list_id':       pv.email_list_id,
+        'email_list_ids':      pv.email_list_ids,
         'enabled':             pv.enabled,
         'auto_enable':         pv.auto_enable,
         'notify_flag':         pv.notify_flag,
@@ -260,8 +261,7 @@ def pv_form(pv_id=None):
         except ValueError:
             pv.notify_interval = 3600
 
-        elist_id = request.form.get('email_list_id', '')
-        pv.email_list_id = int(elist_id) if elist_id else None
+        pv.email_list_ids = request.form.getlist('email_list_id')
 
         if not pv.pv_name:
             errors['pv_name'] = 'PV name is required.'
@@ -362,6 +362,15 @@ def email_list_form(list_id=None):
 def email_list_delete(list_id):
     elist = EmailList.query.get_or_404(list_id)
     name = elist.name
+    used = []
+    for label, model in (('PV', PVMonitor), ('process', ProcessMonitor), ('rule', CompoundRule), ('IOC', SoftIOC)):
+        n = sum(1 for i in model.query.all() if list_id in i.email_list_ids)
+        if n:
+            used.append(f'{n} {label}{"s" if n != 1 else ""}')
+    if used:
+        flash(f'Email list "{name}" is still used by {", ".join(used)}. Remove it from them first '
+              f'(Bulk edit → email list → Remove, or edit each item).', 'danger')
+        return redirect(url_for('admin.email_lists'))
     db.session.delete(elist)
     db.session.commit()
     flash(f'Email list "{name}" deleted.', 'warning')
@@ -405,8 +414,7 @@ def rule_form(rule_id=None):
         except ValueError:
             rule.notify_interval = 3600
 
-        elist_id = request.form.get('email_list_id', '')
-        rule.email_list_id = int(elist_id) if elist_id else None
+        rule.email_list_ids = request.form.getlist('email_list_id')
 
         conditions_json = request.form.get('conditions_json', '[]')
         try:
@@ -778,8 +786,13 @@ def bulk_update():
         old_snap = _pv_snapshot(item) if item_type == 'pv' else None
         if change_cat and hasattr(item, 'category_id'):
             item.category_id = int(cat_val) if cat_val else None
-        if change_email and hasattr(item, 'email_list_id'):
-            item.email_list_id = int(email_val) if email_val else None
+        if change_email and hasattr(item, 'email_list_ids'):
+            if not email_val:
+                item.email_list_ids = []
+            elif request.form.get('email_mode') == 'add':
+                item.email_list_ids = item.email_list_ids + [int(email_val)]
+            else:
+                item.email_list_ids = [int(email_val)]
         if change_enabled:
             if enabled_val == 'auto':
                 if hasattr(item, 'auto_enable'):
@@ -831,8 +844,7 @@ def process_form(proc_id=None):
         except ValueError:
             pm.notify_interval = 3600
 
-        elist_id = request.form.get('email_list_id', '')
-        pm.email_list_id = int(elist_id) if elist_id else None
+        pm.email_list_ids = request.form.getlist('email_list_id')
 
         if not pm.name:
             errors['name'] = 'Display name is required.'
@@ -1203,8 +1215,7 @@ def ioc_form(ioc_id=None):
         if ioc.enabled and was_enabled is False:
             ioc.status_since = None
         ioc.category_id = int(f['category_id']) if f.get('category_id') else None
-        elist_id = f.get('email_list_id', '')
-        ioc.email_list_id = int(elist_id) if elist_id else None
+        ioc.email_list_ids = f.getlist('email_list_id')
 
         try:
             ioc.notify_interval = int(f.get('notify_interval', '3600').strip())
@@ -1516,7 +1527,7 @@ def pv_history_restore(hist_id):
     pv.clear_delay         = old.get('clear_delay', 0)
     pv.pending_since       = None
     pv.category_id         = old.get('category_id')
-    pv.email_list_id       = old.get('email_list_id')
+    pv.email_list_ids      = old.get('email_list_ids', [old.get('email_list_id')])
     pv.enabled             = old['enabled']
     pv.auto_enable         = old['auto_enable']
     pv.notify_flag         = old['notify_flag']

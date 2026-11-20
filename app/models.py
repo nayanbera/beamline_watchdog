@@ -144,7 +144,42 @@ class Category(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-class PVMonitor(db.Model):
+class MultiEmailList:
+    """
+    Items that notify one or more email lists. `email_list_id` holds the first list (kept for
+    compatibility); further lists are stored comma-separated in `extra_email_list_ids`.
+    """
+
+    @property
+    def email_list_ids(self):
+        ids = [self.email_list_id] if self.email_list_id else []
+        for part in (self.extra_email_list_ids or '').split(','):
+            if part.strip().isdigit() and int(part) not in ids:
+                ids.append(int(part))
+        return ids
+
+    @email_list_ids.setter
+    def email_list_ids(self, ids):
+        ids = list(dict.fromkeys(int(i) for i in ids if str(i).strip().isdigit()))
+        self.email_list_id = ids[0] if ids else None
+        self.extra_email_list_ids = ','.join(str(i) for i in ids[1:]) or None
+
+    @property
+    def email_lists_all(self):
+        """The EmailList objects (lists that were deleted are skipped)."""
+        return [e for e in (EmailList.query.get(i) for i in self.email_list_ids) if e]
+
+    def all_emails(self):
+        """Addresses of every chosen list, without duplicates."""
+        out = []
+        for el in self.email_lists_all:
+            for a in el.get_emails():
+                if a not in out:
+                    out.append(a)
+        return out
+
+
+class PVMonitor(MultiEmailList, db.Model):
     __tablename__ = 'pv_monitors'
     id = db.Column(db.Integer, primary_key=True)
     pv_name = db.Column(db.String(255), unique=True, nullable=False)
@@ -167,6 +202,7 @@ class PVMonitor(db.Model):
     notify_flag = db.Column(db.Boolean, default=True)
     notify_on_disconnect = db.Column(db.Boolean, default=False)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    extra_email_list_ids = db.Column(db.Text, nullable=True)
     email_list = db.relationship('EmailList', backref='pv_monitors', foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
     auto_enable = db.Column(db.Boolean, default=False)  # re-enable automatically when condition clears
@@ -207,7 +243,7 @@ class PVMonitor(db.Model):
         return s
 
 
-class CompoundRule(db.Model):
+class CompoundRule(MultiEmailList, db.Model):
     """
     A boolean combination of individual PV alarm states.
     expression (JSON): {"logic": "AND"|"OR",
@@ -222,6 +258,7 @@ class CompoundRule(db.Model):
     expression = db.Column(db.Text, default='{}')
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    extra_email_list_ids = db.Column(db.Text, nullable=True)
     email_list = db.relationship('EmailList', backref='compound_rules', foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
     notify_interval = db.Column(db.Integer, default=3600)
@@ -268,7 +305,7 @@ class NotificationLog(db.Model):
         self._recipients = json.dumps(value if value else [])
 
 
-class ProcessMonitor(db.Model):
+class ProcessMonitor(MultiEmailList, db.Model):
     """
     Monitor a system process by name or command-line substring.
     Alarm = process is NOT running.
@@ -286,6 +323,7 @@ class ProcessMonitor(db.Model):
     category = db.relationship('Category', backref='process_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    extra_email_list_ids = db.Column(db.Text, nullable=True)
     email_list = db.relationship('EmailList', backref='process_monitors',
                                  foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
@@ -306,7 +344,7 @@ class ProcessMonitor(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
-class SoftIOC(db.Model):
+class SoftIOC(MultiEmailList, db.Model):
     """
     An EPICS soft-IOC running on a (possibly remote) host.
     Remote hosts are controlled over SSH (key-based auth); host 'localhost' runs locally.
@@ -341,6 +379,7 @@ class SoftIOC(db.Model):
     # Notifications / monitoring
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
+    extra_email_list_ids = db.Column(db.Text, nullable=True)
     email_list = db.relationship('EmailList', backref='soft_iocs',
                                  foreign_keys=[email_list_id])
     notify_interval = db.Column(db.Integer, default=3600)

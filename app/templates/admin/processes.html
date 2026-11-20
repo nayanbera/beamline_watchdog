@@ -56,6 +56,11 @@
           <option value="{{ el.id }}">{{ el.name }}</option>
           {% endfor %}
         </select>
+        <select name="email_mode" class="form-select form-select-sm" style="width:135px"
+                title="With a list chosen: replace the item's lists, or add it to them">
+          <option value="set">Replace lists</option>
+          <option value="add">Add to lists</option>
+        </select>
         <select name="enabled" class="form-select form-select-sm" style="width:155px">
           <option value="">— enabled unchanged —</option>
           <option value="1">Enable all</option>
@@ -147,7 +152,7 @@
               <i class="bi bi-bell-slash text-muted"></i>
             {% endif %}
           </td>
-          <td class="small">{{ pm.email_list.name if pm.email_list else '—' }}</td>
+          <td class="small">{% for el in pm.email_lists_all %}<span class="badge bg-light text-dark border">{{ el.name }}</span> {% else %}—{% endfor %}</td>
           <td class="small">
             {% if pm.last_stopped %}
               <span class="text-danger">{{ pm.last_stopped.strftime('%Y-%m-%d %H:%M') }}</span>

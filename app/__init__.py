@@ -224,6 +224,11 @@ def _run_migrations():
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE soft_iocs ADD COLUMN {col} {typedef}'))
 
+        for table in ('pv_monitors', 'compound_rules', 'process_monitors', 'soft_iocs'):
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            if existing and 'extra_email_list_ids' not in existing:
+                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN extra_email_list_ids TEXT'))
+
         result = conn.execute(text("PRAGMA table_info(categories)"))
         existing = {row[1] for row in result}
         if 'color' not in existing:

@@ -1,0 +1,15 @@
+<label class="form-label fw-semibold">Email Lists</label>
+<div class="border rounded p-2" style="max-height:150px; overflow-y:auto">
+  {% for elist in email_lists %}
+  <div class="form-check">
+    <input class="form-check-input" type="checkbox" name="email_list_id" value="{{ elist.id }}"
+           id="el-{{ elist.id }}" {{ 'checked' if elist.id in selected_ids }}>
+    <label class="form-check-label" for="el-{{ elist.id }}">
+      {{ elist.name }} <span class="text-muted small">({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})</span>
+    </label>
+  </div>
+  {% else %}
+  <span class="text-muted small">No email lists yet.</span>
+  {% endfor %}
+</div>
+<div class="form-text">Tick one or more; none = no notification. Recipients on several lists get one mail.</div>

@@ -59,6 +59,11 @@
           <option value="{{ el.id }}">{{ el.name }}</option>
           {% endfor %}
         </select>
+        <select name="email_mode" class="form-select form-select-sm" style="width:135px"
+                title="With a list chosen: replace the item's lists, or add it to them">
+          <option value="set">Replace lists</option>
+          <option value="add">Add to lists</option>
+        </select>
         <select name="enabled" class="form-select form-select-sm" style="width:155px">
           <option value="">— enabled unchanged —</option>
           <option value="1">Enable all</option>
@@ -176,7 +181,7 @@
                title="Auto-start on boot: {{ 'on — started if found stopped after a reboot or host recovery' if ioc.autostart else 'off' }}"></i>
             {% endif %}
           </td>
-          <td class="small">{{ ioc.email_list.name if ioc.email_list else '—' }}</td>
+          <td class="small">{% for el in ioc.email_lists_all %}<span class="badge bg-light text-dark border">{{ el.name }}</span> {% else %}—{% endfor %}</td>
           <td class="small">
             {% if ioc.last_stopped %}
               <span class="text-danger">{{ localdt(ioc.last_stopped, '%Y-%m-%d %H:%M') }}</span>

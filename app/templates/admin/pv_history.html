@@ -60,8 +60,8 @@
             {% for key in ['condition_op','condition_value','condition_value2',
                            'condition_clear_value','alarm_delay','clear_delay',
                            'enabled','auto_enable','notify_flag','category_id',
-                           'email_list_id','notify_interval','alias'] %}
-              {% if old.get(key) != new.get(key) %}
+                           'email_list_id','email_list_ids','notify_interval','alias'] %}
+              {% if (key in old and key in new) and old.get(key) != new.get(key) and not (key == 'email_list_id' and 'email_list_ids' in new) %}
                 {% set _ = changed.append(key ~ ': ' ~ (old.get(key)|string) ~ ' → ' ~ (new.get(key)|string)) %}
               {% endif %}
             {% endfor %}

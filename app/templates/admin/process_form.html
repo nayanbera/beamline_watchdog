@@ -115,16 +115,7 @@
             <div class="col-12"><hr class="my-1"><h6 class="text-muted">Notifications</h6></div>
 
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Email List</label>
-              <select name="email_list_id" class="form-select">
-                <option value="">— No notification —</option>
-                {% for elist in email_lists %}
-                <option value="{{ elist.id }}"
-                  {{ 'selected' if pm.email_list_id == elist.id }}>
-                  {{ elist.name }} ({{ elist.email_count }} address{{ 'es' if elist.email_count != 1 }})
-                </option>
-                {% endfor %}
-              </select>
+              {% set selected_ids = pm.email_list_ids %}{% include 'admin/_email_lists_field.html' %}
             </div>
 
             <div class="col-md-3">
