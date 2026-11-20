@@ -602,6 +602,16 @@ is running again*.
 
 ---
 
+## Combined alert emails
+
+Faults found in the same check run are sent together instead of one mail each. A "run" is one
+pass of a check job (PVs + rules + processes, IOCs, or server health). Every item still has its own
+email list, so the mails are built **per recipient**: each person gets one mail per run containing only
+the events sent to the lists they belong to, and people due the same set of events share one message.
+A single event is sent exactly as before; several are sent as `[WATCHDOG] 3 faults: 2 ALARM, 1 STOPPED
+(+1 recovered)` with an index of all events followed by each event's details. Each event is still logged
+separately in the Logs tab. Events from different jobs (e.g. a PV and an IOC) in different runs are not merged.
+
 ## Compound Rules
 
 A compound rule sends a notification when a *combination* of PV alarm states is true:

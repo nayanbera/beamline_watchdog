@@ -245,9 +245,10 @@ def check_all_pvs(app):
         from . import db
         from .models import PVMonitor, CompoundRule, EmailList, SystemConfig
         from .condition_eval import is_in_alarm, evaluate_compound_rule
-        from .email_utils import send_notification_email
+        from .notify import Digest
 
         cfg = {c.key: c.value for c in SystemConfig.query.all()}
+        digest = Digest(db, cfg, _log_notification)
         default_notify_interval = int(cfg.get('default_notify_interval', 3600))
         now = datetime.utcnow()
         now_str = _local_now_str(cfg)
@@ -282,12 +283,7 @@ def check_all_pvs(app):
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
                                     body = _pv_disconnect_body(pv, now_str)
-                                    ok, err = send_notification_email(
-                                        elist.get_emails(),
-                                        f'[WATCHDOG DISCONNECTED] {pv.display_name}',
-                                        body, cfg)
-                                    _log_notification(db, 'PV', pv.id, pv.pv_name,
-                                                      'DISCONNECTED', body, elist.get_emails(), ok, err)
+                                    digest.add('PV', pv.id, pv.pv_name, 'DISCONNECTED', f'[WATCHDOG DISCONNECTED] {pv.display_name}', body, elist.get_emails())
                                     pv.last_notified_disconnect = now
                 else:
                     try:
@@ -331,12 +327,7 @@ def check_all_pvs(app):
                         elist = EmailList.query.get(pv.email_list_id)
                         if elist:
                             body = _pv_reconnect_body(pv, raw, now_str)
-                            ok, err = send_notification_email(
-                                elist.get_emails(),
-                                f'[WATCHDOG RECONNECTED] {pv.display_name}',
-                                body, cfg)
-                            _log_notification(db, 'PV', pv.id, pv.pv_name,
-                                              'RECONNECTED', body, elist.get_emails(), ok, err)
+                            digest.add('PV', pv.id, pv.pv_name, 'RECONNECTED', f'[WATCHDOG RECONNECTED] {pv.display_name}', body, elist.get_emails())
 
                     if alarm is None:
                         pv.status = 'ERROR'
@@ -355,12 +346,7 @@ def check_all_pvs(app):
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
                                     body = _pv_alarm_body(pv, raw, now_str)
-                                    ok, err = send_notification_email(
-                                        elist.get_emails(),
-                                        f'[WATCHDOG ALARM] {pv.display_name}',
-                                        body, cfg)
-                                    _log_notification(db, 'PV', pv.id, pv.pv_name,
-                                                      'ALARM', body, elist.get_emails(), ok, err)
+                                    digest.add('PV', pv.id, pv.pv_name, 'ALARM', f'[WATCHDOG ALARM] {pv.display_name}', body, elist.get_emails())
                                     pv.last_notified = now
                     else:
                         pv_status_map[pv.id] = 'OK'
@@ -370,12 +356,7 @@ def check_all_pvs(app):
                                 elist = EmailList.query.get(pv.email_list_id)
                                 if elist:
                                     body = _pv_recovery_body(pv, raw, now_str)
-                                    ok, err = send_notification_email(
-                                        elist.get_emails(),
-                                        f'[WATCHDOG RECOVERED] {pv.display_name}',
-                                        body, cfg)
-                                    _log_notification(db, 'PV', pv.id, pv.pv_name,
-                                                      'RECOVERED', body, elist.get_emails(), ok, err)
+                                    digest.add('PV', pv.id, pv.pv_name, 'RECOVERED', f'[WATCHDOG RECOVERED] {pv.display_name}', body, elist.get_emails())
                         else:
                             pv.status = 'OK'
 
@@ -451,12 +432,7 @@ def check_all_pvs(app):
                             elist = EmailList.query.get(rule.email_list_id)
                             if elist:
                                 body = _rule_alarm_body(rule, pv_status_map, now_str)
-                                ok, err = send_notification_email(
-                                    elist.get_emails(),
-                                    f'[WATCHDOG RULE ALARM] {rule.name}',
-                                    body, cfg)
-                                _log_notification(db, 'RULE', rule.id, rule.name,
-                                                  'ALARM', body, elist.get_emails(), ok, err)
+                                digest.add('RULE', rule.id, rule.name, 'ALARM', f'[WATCHDOG RULE ALARM] {rule.name}', body, elist.get_emails())
                                 rule.last_notified = now
                 else:
                     rule.status = 'OK'
@@ -464,12 +440,7 @@ def check_all_pvs(app):
                         elist = EmailList.query.get(rule.email_list_id)
                         if elist:
                             body = _rule_recovery_body(rule, now_str)
-                            ok, err = send_notification_email(
-                                elist.get_emails(),
-                                f'[WATCHDOG RULE RECOVERED] {rule.name}',
-                                body, cfg)
-                            _log_notification(db, 'RULE', rule.id, rule.name,
-                                              'RECOVERED', body, elist.get_emails(), ok, err)
+                            digest.add('RULE', rule.id, rule.name, 'RECOVERED', f'[WATCHDOG RULE RECOVERED] {rule.name}', body, elist.get_emails())
 
             except Exception as exc:
                 logger.exception('Error evaluating rule %s: %s', rule.name, exc)
@@ -492,12 +463,7 @@ def check_all_pvs(app):
                         elist = EmailList.query.get(pm.email_list_id)
                         if elist:
                             body = _proc_recovery_body(pm, now_str)
-                            ok, err = send_notification_email(
-                                elist.get_emails(),
-                                f'[WATCHDOG PROCESS RUNNING] {pm.name}',
-                                body, cfg)
-                            _log_notification(db, 'PROCESS', pm.id, pm.name,
-                                              'RECOVERED', body, elist.get_emails(), ok, err)
+                            digest.add('PROCESS', pm.id, pm.name, 'RECOVERED', f'[WATCHDOG PROCESS RUNNING] {pm.name}', body, elist.get_emails())
                 else:
                     pm.status = 'STOPPED'
                     pm.pid = None
@@ -511,12 +477,7 @@ def check_all_pvs(app):
                             elist = EmailList.query.get(pm.email_list_id)
                             if elist:
                                 body = _proc_stopped_body(pm, now_str)
-                                ok, err = send_notification_email(
-                                    elist.get_emails(),
-                                    f'[WATCHDOG PROCESS STOPPED] {pm.name}',
-                                    body, cfg)
-                                _log_notification(db, 'PROCESS', pm.id, pm.name,
-                                                  'ALARM', body, elist.get_emails(), ok, err)
+                                digest.add('PROCESS', pm.id, pm.name, 'ALARM', f'[WATCHDOG PROCESS STOPPED] {pm.name}', body, elist.get_emails())
                                 pm.last_notified = now
 
                 if pm.status != prev or pm.status_since is None:
@@ -560,6 +521,8 @@ def check_all_pvs(app):
                 logger.exception('Error during auto-enable check for process %s: %s',
                                  pm.name, exc)
 
+        db.session.commit()
+        digest.flush()
         db.session.commit()
 
 
@@ -731,10 +694,11 @@ def check_iocs(app):
     with app.app_context():
         from . import db
         from .models import SoftIOC, EmailList, SystemConfig
-        from .email_utils import send_notification_email
+        from .notify import Digest
         from .ioc_utils import check_iocs_batch
 
         cfg = {c.key: c.value for c in SystemConfig.query.all()}
+        digest = Digest(db, cfg, _log_notification)
         default_notify_interval = int(cfg.get('default_notify_interval', 3600))
         now = datetime.utcnow()
         now_str = _local_now_str(cfg)
@@ -803,17 +767,15 @@ def check_iocs(app):
                     elist = EmailList.query.get(ioc.email_list_id)
                     if elist:
                         body = _ioc_body(ioc, now_str, event)
-                        ok, err = send_notification_email(
-                            elist.get_emails(),
-                            f'[WATCHDOG {_IOC_EVENTS[event][1]}] {ioc.name}', body, cfg)
-                        _log_notification(db, 'IOC', ioc.id, ioc.name, event, body,
-                                          elist.get_emails(), ok, err)
+                        digest.add('IOC', ioc.id, ioc.name, event, f'[WATCHDOG {_IOC_EVENTS[event][1]}] {ioc.name}', body, elist.get_emails())
 
                 if ioc.status != prev or ioc.status_since is None:
                     ioc.status_since = now
             except Exception as exc:
                 logger.exception('Error processing IOC %s: %s', ioc.name, exc)
 
+        db.session.commit()
+        digest.flush()
         db.session.commit()
 
         if to_start:
@@ -826,9 +788,10 @@ def check_health(app):
     with app.app_context():
         from . import db, health
         from .models import HealthCheck, EmailList, SystemConfig
-        from .email_utils import send_notification_email
+        from .notify import Digest
 
         cfg = {c.key: c.value for c in SystemConfig.query.all()}
+        digest = Digest(db, cfg, _log_notification)
         ignore = (cfg.get('health_ignore_units') or '').replace(',', ' ').split()
         elist = None
         if (cfg.get('health_email_list_id') or '').isdigit():
@@ -877,14 +840,14 @@ def check_health(app):
                     body = (f'Server health on {host}: {row.label}\n'
                             f'State: {event}\nValue: {row.value_str}\nDetail: {row.detail}\n'
                             f'Thresholds (>=): {thr or "none"}\nTime: {now_str}')
-                    ok, err = send_notification_email(
-                        elist.get_emails(), f'[WATCHDOG HEALTH {event}] {host}: {row.label}', body, cfg)
-                    _log_notification(db, 'HEALTH', row.id, row.label, event, body, elist.get_emails(), ok, err)
+                    digest.add('HEALTH', row.id, row.label, event, f'[WATCHDOG HEALTH {event}] {host}: {row.label}', body, elist.get_emails())
             except Exception as exc:
                 logger.exception('Error processing health check %s: %s', rd.get('key'), exc)
         for key, row in rows.items():          # e.g. an unmounted disk
             if key not in seen and key.startswith('disk:'):
                 db.session.delete(row)
+        db.session.commit()
+        digest.flush()
         db.session.commit()
 
 
