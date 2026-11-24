@@ -634,6 +634,18 @@ level alarm was already active.
 - Disconnected readings are skipped. The current change is shown under the value on the dashboard
   and in the PV table (red while the rate alarm is active).
 
+## Ignoring short glitches
+
+A momentary disconnect or stop (network blip, a slow check) should not mail anyone. A PV
+disconnect, a stopped process, or a bad IOC state (stopped, unreachable, hung, no devIocStats) must last
+**N seconds** before it is shown and mailed; until then the item keeps its previous status. N is set in
+**Settings → Ignore glitches shorter than** (default 10 s, 0 = report immediately) and can be overridden
+per PV, process and IOC on its form (blank = default). A PV value alarm with no Alarm Delay of its own uses the
+same default; clear delays are unchanged. A glitch that recovers in time sends nothing, not even a
+"recovered" mail. Checks run every check interval, so with the default 10 s a bad state must be seen on two
+consecutive checks (10 s apart). A real outage is therefore reported up to N seconds (plus one check) late,
+on the dashboard as well as in the mail. IOC auto-start waits for the same confirmation.
+
 ## Compound Rules
 
 A compound rule sends a notification when a *combination* of PV alarm states is true:

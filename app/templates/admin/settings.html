@@ -71,6 +71,13 @@
               <small class="text-muted">Min seconds between repeat alarm notifications.</small>
             </div>
             <div class="col-md-6">
+              <label class="form-label">Ignore Glitches Shorter Than (seconds)</label>
+              <input type="number" name="glitch_delay" class="form-control"
+                value="{{ cfg.get('glitch_delay', '10') }}" min="0" max="3600">
+              <small class="text-muted">A PV disconnect, stopped process or bad IOC state must last this long
+                before it is shown and mailed. 0 = report immediately. Each PV, process and IOC can override this.</small>
+            </div>
+            <div class="col-md-6">
               <label class="form-label">Site Name</label>
               <input type="text" name="site_name" class="form-control"
                 value="{{ cfg.get('site_name', 'EPICS PV Watchdog') }}">

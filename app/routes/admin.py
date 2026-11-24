@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 
+def _parse_confirm_delay(form, errors):
+    """Optional glitch-filter seconds from a form; blank = None (use the global default)."""
+    raw = form.get('confirm_delay', '').strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+        if value < 0:
+            raise ValueError
+        return value
+    except ValueError:
+        errors['confirm_delay'] = 'Must be a whole number of seconds (0 or more), or blank.'
+        return None
+
+
 def _pv_snapshot(pv):
     """Return a dict of all user-configurable PVMonitor fields."""
     return {
@@ -35,6 +50,7 @@ def _pv_snapshot(pv):
         'category_id':         pv.category_id,
         'email_list_id':       pv.email_list_id,
         'email_list_ids':      pv.email_list_ids,
+        'confirm_delay':       pv.confirm_delay,
         'roc_enabled':         pv.roc_enabled,
         'roc_window':          pv.roc_window,
         'roc_threshold':       pv.roc_threshold,
@@ -267,6 +283,7 @@ def pv_form(pv_id=None):
             pv.notify_interval = 3600
 
         pv.email_list_ids = request.form.getlist('email_list_id')
+        pv.confirm_delay = _parse_confirm_delay(request.form, errors)
 
         # Rate-of-change alarm
         f = request.form
@@ -528,7 +545,7 @@ def settings():
         else:
             keys = ['mail_server', 'mail_port', 'mail_username', 'mail_password',
                     'mail_use_tls', 'mail_use_ssl', 'mail_sender',
-                    'check_interval', 'default_notify_interval', 'site_name', 'site_url',
+                    'check_interval', 'default_notify_interval', 'glitch_delay', 'site_name', 'site_url',
                     'timezone', 'archiver_url',
                     'epics_ca_addr_list', 'epics_ca_auto_addr_list']
             for key in keys:
@@ -536,6 +553,8 @@ def settings():
                     val = 'true' if request.form.get(key) else 'false'
                 else:
                     val = request.form.get(key, '').strip()
+                if key == 'glitch_delay' and not val.isdigit():
+                    val = '10'
                 row = SystemConfig.query.filter_by(key=key).first()
                 if row:
                     row.value = val
@@ -869,6 +888,7 @@ def process_form(proc_id=None):
             pm.notify_interval = 3600
 
         pm.email_list_ids = request.form.getlist('email_list_id')
+        pm.confirm_delay = _parse_confirm_delay(request.form, errors)
 
         if not pm.name:
             errors['name'] = 'Display name is required.'
@@ -1240,6 +1260,7 @@ def ioc_form(ioc_id=None):
             ioc.status_since = None
         ioc.category_id = int(f['category_id']) if f.get('category_id') else None
         ioc.email_list_ids = f.getlist('email_list_id')
+        ioc.confirm_delay = _parse_confirm_delay(f, errors)
 
         try:
             ioc.notify_interval = int(f.get('notify_interval', '3600').strip())
@@ -1552,6 +1573,7 @@ def pv_history_restore(hist_id):
     pv.pending_since       = None
     pv.category_id         = old.get('category_id')
     pv.email_list_ids      = old.get('email_list_ids', [old.get('email_list_id')])
+    pv.confirm_delay       = old.get('confirm_delay')
     pv.roc_enabled         = old.get('roc_enabled', False)
     pv.roc_window          = old.get('roc_window')
     pv.roc_threshold       = old.get('roc_threshold')

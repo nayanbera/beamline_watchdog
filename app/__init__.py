@@ -199,6 +199,8 @@ def _run_migrations():
             ('roc_alarm',               'INTEGER DEFAULT 0'),
             ('roc_detail',              'TEXT'),
             ('roc_text',                'TEXT'),
+            ('confirm_delay',           'INTEGER'),
+            ('disc_since',              'DATETIME'),
         ]:
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))
@@ -231,6 +233,14 @@ def _run_migrations():
             ]:
                 if col not in existing:
                     conn.execute(text(f'ALTER TABLE soft_iocs ADD COLUMN {col} {typedef}'))
+
+        for table, cols in (('process_monitors', (('confirm_delay', 'INTEGER'), ('pending_since', 'DATETIME'))),
+                            ('soft_iocs', (('confirm_delay', 'INTEGER'), ('pending_since', 'DATETIME'),
+                                           ('pending_status', 'TEXT')))):
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            for col, typedef in cols:
+                if existing and col not in existing:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {typedef}'))
 
         for table in ('pv_monitors', 'compound_rules', 'process_monitors', 'soft_iocs'):
             existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
@@ -269,6 +279,7 @@ def _initialize_defaults():
         ('mail_sender',            'watchdog@localhost', 'From address for notification emails'),
         ('check_interval',         '10',                 'How often to check PVs (seconds)'),
         ('default_notify_interval','3600',               'Min seconds between repeated notifications'),
+        ('glitch_delay',           '10',                 'Seconds a disconnect/stop must last before it counts (filters momentary glitches)'),
         ('site_name',              'EPICS PV Watchdog',  'Site name shown in page header'),
         ('site_url',               '',                   'Base URL of this watchdog (shown in notification emails)'),
         ('timezone',               'UTC',                'Display timezone for all timestamps (IANA name, e.g. America/Chicago)'),

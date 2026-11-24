@@ -124,6 +124,15 @@
               <small class="text-muted">0 = once per alarm only</small>
             </div>
 
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Ignore glitches shorter than (s)</label>
+              <input type="number" name="confirm_delay" min="0"
+                     class="form-control {{ 'is-invalid' if errors.get('confirm_delay') }}"
+                     value="{{ pv.confirm_delay if pv.confirm_delay is not none else '' }}" placeholder="default">
+              {% if errors.get('confirm_delay') %}<div class="invalid-feedback">{{ errors['confirm_delay'] }}</div>{% endif %}
+              <small class="text-muted">A disconnect must last this long before it is reported. Blank = default from Settings; 0 = immediately.</small>
+            </div>
+
             <div class="col-md-3 d-flex flex-column justify-content-center gap-2 pt-4">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="notify_flag" id="notify_flag"

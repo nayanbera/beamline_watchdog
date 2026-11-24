@@ -280,6 +280,16 @@ def _proc_recovery_body(pm, now_str):
 # Core check function
 # ---------------------------------------------------------------------------
 
+def _confirm_delay(item, cfg):
+    """Seconds a bad state must last before it counts: the item's own value, else the global default."""
+    if item.confirm_delay is not None:
+        return max(0, item.confirm_delay)
+    try:
+        return max(0, int(cfg.get('glitch_delay', 10)))
+    except (TypeError, ValueError):
+        return 10
+
+
 class _Combined:
     """Stands in for one EmailList: the merged, de-duplicated addresses of all of an item's lists."""
 
@@ -310,6 +320,16 @@ def _log_notification(db, source_type, source_id, source_name,
     db.session.add(entry)
 
 
+def _hold_process(pm, now, cfg):
+    """True while a process has been missing for less than its glitch delay."""
+    if pm.pending_since is None:
+        pm.pending_since = now
+    if (now - pm.pending_since).total_seconds() < _confirm_delay(pm, cfg):
+        return True
+    pm.pending_since = None
+    return False
+
+
 def check_all_pvs(app):
     """Main watchdog tick — called by APScheduler every check_interval seconds."""
     with app.app_context():
@@ -338,9 +358,16 @@ def check_all_pvs(app):
                 pv.last_checked = now
 
                 if raw is None:
+                    pv.pending_since = None
+                    if pv.enabled and prev != 'DISCONNECTED':
+                        # Glitch filter: keep the previous state until the disconnect has lasted long enough
+                        if pv.disc_since is None:
+                            pv.disc_since = now
+                        if (now - pv.disc_since).total_seconds() < _confirm_delay(pv, cfg):
+                            pv_status_map[pv.id] = pv.status
+                            continue
                     pv.current_value = None
                     pv.current_value_str = 'N/A'
-                    pv.pending_since = None
                     if pv.enabled:
                         pv.status = 'DISCONNECTED'
                         pv_status_map[pv.id] = 'DISCONNECTED'
@@ -357,6 +384,7 @@ def check_all_pvs(app):
                                     digest.add('PV', pv.id, pv.pv_name, 'DISCONNECTED', f'[WATCHDOG DISCONNECTED] {pv.display_name}', body, elist.get_emails())
                                     pv.last_notified_disconnect = now
                 else:
+                    pv.disc_since = None
                     try:
                         fval = float(raw)
                         pv.current_value = fval
@@ -399,7 +427,7 @@ def check_all_pvs(app):
                         pv.pending_since = None
                     else:
                         was_alarm = (prev == 'ALARM')
-                        delay = ((pv.alarm_delay if alarm else pv.clear_delay) or 0)
+                        delay = ((pv.alarm_delay or _confirm_delay(pv, cfg)) if alarm else (pv.clear_delay or 0))
                         if alarm == was_alarm:
                             pv.pending_since = None
                         elif delay > 0:
@@ -552,6 +580,7 @@ def check_all_pvs(app):
                 pm.last_checked = now
 
                 if running:
+                    pm.pending_since = None
                     pm.status = 'RUNNING'
                     pm.pid = pid
                     if prev == 'STOPPED' and pm.notify_flag and pm.email_list_ids:
@@ -559,6 +588,8 @@ def check_all_pvs(app):
                         if elist:
                             body = _proc_recovery_body(pm, now_str)
                             digest.add('PROCESS', pm.id, pm.name, 'RECOVERED', f'[WATCHDOG PROCESS RUNNING] {pm.name}', body, elist.get_emails())
+                elif prev != 'STOPPED' and _hold_process(pm, now, cfg):
+                    pass        # glitch filter: not stopped for long enough yet, keep the previous status
                 else:
                     pm.status = 'STOPPED'
                     pm.pid = None
@@ -834,6 +865,14 @@ def check_iocs(app):
                     continue
 
                 prev = ioc.status
+                if status in _IOC_BAD and status != prev:
+                    # Glitch filter: a bad state must last long enough before it is shown and mailed
+                    if ioc.pending_status != status or ioc.pending_since is None:
+                        ioc.pending_status, ioc.pending_since = status, now
+                    if (now - ioc.pending_since).total_seconds() < _confirm_delay(ioc, cfg):
+                        ioc.last_checked = now
+                        continue
+                ioc.pending_status = ioc.pending_since = None
                 ioc.last_checked = now
                 ioc.status, ioc.status_detail = status, detail
                 if not ioc.is_hard and status not in ('UNREACHABLE', 'UNKNOWN'):

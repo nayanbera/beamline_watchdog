@@ -207,6 +207,10 @@ class PVMonitor(MultiEmailList, db.Model):
     roc_alarm = db.Column(db.Boolean, default=False)  # runtime: rate alarm active
     roc_detail = db.Column(db.String(200))            # runtime: why the rate alarm fired
     roc_text = db.Column(db.String(100))              # runtime: current change, for display
+    # Glitch filter: a disconnect (and a value alarm without its own Alarm Delay) must last this
+    # many seconds before it counts. NULL = use the global default (Settings).
+    confirm_delay = db.Column(db.Integer, nullable=True)
+    disc_since = db.Column(db.DateTime)               # runtime: when the current disconnect began
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     category = db.relationship('Category', backref='pv_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
@@ -344,6 +348,8 @@ class ProcessMonitor(MultiEmailList, db.Model):
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
     extra_email_list_ids = db.Column(db.Text, nullable=True)
+    confirm_delay = db.Column(db.Integer, nullable=True)   # glitch filter (s); NULL = global default
+    pending_since = db.Column(db.DateTime)                 # runtime: when a pending bad state began
     email_list = db.relationship('EmailList', backref='process_monitors',
                                  foreign_keys=[email_list_id])
     enabled = db.Column(db.Boolean, default=True)
@@ -400,6 +406,9 @@ class SoftIOC(MultiEmailList, db.Model):
     notify_flag = db.Column(db.Boolean, default=True)
     email_list_id = db.Column(db.Integer, db.ForeignKey('email_lists.id'), nullable=True)
     extra_email_list_ids = db.Column(db.Text, nullable=True)
+    confirm_delay = db.Column(db.Integer, nullable=True)   # glitch filter (s); NULL = global default
+    pending_since = db.Column(db.DateTime)                 # runtime: when a pending bad state began
+    pending_status = db.Column(db.String(20))              # runtime: the bad state being confirmed
     email_list = db.relationship('EmailList', backref='soft_iocs',
                                  foreign_keys=[email_list_id])
     notify_interval = db.Column(db.Integer, default=3600)
