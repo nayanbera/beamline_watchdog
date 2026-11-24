@@ -152,6 +152,7 @@
             {% if pv.current_value_str %}{{ pv.current_value_str }}
             {% elif pv.current_value is not none %}{{ '%.6g'|format(pv.current_value) }}
             {% else %}—{% endif %}
+            {% if pv.roc_enabled and pv.roc_text %}<small class="d-block {{ 'text-danger' if pv.roc_alarm else 'text-muted' }}">Δ {{ pv.roc_text }}</small>{% endif %}
           </td>
           <td class="text-center">
             {% if pv.notify_flag %}

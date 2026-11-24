@@ -191,6 +191,14 @@ def _run_migrations():
             ('alarm_delay',             'INTEGER DEFAULT 0'),
             ('clear_delay',             'INTEGER DEFAULT 0'),
             ('pending_since',           'DATETIME'),
+            ('roc_enabled',             'INTEGER DEFAULT 0'),
+            ('roc_window',              'INTEGER'),
+            ('roc_threshold',           'FLOAT'),
+            ('roc_direction',           "TEXT DEFAULT 'either'"),
+            ('roc_unit',                "TEXT DEFAULT 'abs'"),
+            ('roc_alarm',               'INTEGER DEFAULT 0'),
+            ('roc_detail',              'TEXT'),
+            ('roc_text',                'TEXT'),
         ]:
             if col not in existing:
                 conn.execute(text(f'ALTER TABLE pv_monitors ADD COLUMN {col} {typedef}'))

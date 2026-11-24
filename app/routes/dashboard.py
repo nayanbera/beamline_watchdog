@@ -104,6 +104,8 @@ def api_status():
             'alias': p.alias or '',
             'category': p.category.name if p.category else '',
             'current_value': p.current_value_str or ('N/A' if p.current_value is None else str(p.current_value)),
+            'roc': (p.roc_text or '') if p.roc_enabled else '',
+            'roc_alarm': bool(p.roc_alarm),
             'status': p.status,
             'enabled': p.enabled,
             'last_checked': _fmt(p.last_checked, tz, '%H:%M:%S %Z'),

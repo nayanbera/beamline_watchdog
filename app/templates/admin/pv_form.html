@@ -138,6 +138,52 @@
               </div>
             </div>
 
+            <div class="col-12"><hr class="my-1"><h6 class="text-muted">Rate of change (optional)</h6></div>
+
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="roc_enabled" id="roc_enabled"
+                  {{ 'checked' if pv.roc_enabled }}>
+                <label class="form-check-label" for="roc_enabled">
+                  Alarm when the value changes too much within a time window
+                  <small class="text-muted d-block">
+                    Compares the current value with the value one window ago. Works together with the alarm
+                    condition above: the PV is in alarm if either one triggers. After a restart the
+                    watchdog needs one full window to collect history before this check is active.
+                  </small>
+                </label>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Window (minutes)</label>
+              <input type="number" step="any" min="0.17" name="roc_window"
+                     class="form-control {{ 'is-invalid' if errors.get('roc_window') }}"
+                     value="{{ (pv.roc_window / 60)|round(2) if pv.roc_window else '' }}" placeholder="10">
+              {% if errors.get('roc_window') %}<div class="invalid-feedback">{{ errors['roc_window'] }}</div>{% endif %}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Change greater than</label>
+              <input type="number" step="any" name="roc_threshold"
+                     class="form-control {{ 'is-invalid' if errors.get('roc_threshold') }}"
+                     value="{{ pv.roc_threshold if pv.roc_threshold is not none else '' }}" placeholder="0.5">
+              {% if errors.get('roc_threshold') %}<div class="invalid-feedback">{{ errors['roc_threshold'] }}</div>{% endif %}
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Unit</label>
+              <select name="roc_unit" class="form-select">
+                <option value="abs" {{ 'selected' if pv.roc_unit != 'pct' }}>PV units (absolute)</option>
+                <option value="pct" {{ 'selected' if pv.roc_unit == 'pct' }}>Percent of the starting value</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Direction</label>
+              <select name="roc_direction" class="form-select">
+                <option value="either" {{ 'selected' if pv.roc_direction not in ('rise', 'drop') }}>Rise or drop</option>
+                <option value="rise" {{ 'selected' if pv.roc_direction == 'rise' }}>Rise only</option>
+                <option value="drop" {{ 'selected' if pv.roc_direction == 'drop' }}>Drop only</option>
+              </select>
+            </div>
+
             <div class="col-12">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" name="enabled" id="enabled"

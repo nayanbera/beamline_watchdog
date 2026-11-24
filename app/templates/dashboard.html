@@ -166,6 +166,7 @@
                 {% else %}
                   <span class="text-muted">—</span>
                 {% endif %}
+                {% if pv.roc_enabled and pv.roc_text %}<small class="d-block {{ 'text-danger' if pv.roc_alarm else 'text-muted' }}">Δ {{ pv.roc_text }}</small>{% endif %}
               </td>
               <td class="small text-muted">{{ pv.condition_str }}</td>
               <td class="small" id="pv-checked-{{ pv.id }}">
@@ -525,7 +526,7 @@ function updateActiveIssues(pvs) {
     const aaCell = AA_URL
       ? `<td><a href="${AA_URL}/retrieval/ui/viewer/archViewer.html?pv=${encodeURIComponent(p.pv_name)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info py-0 px-1" title="Archiver"><i class="bi bi-graph-up"></i></a></td>`
       : '';
-    return `<tr class="${rowCls}"><td><span class="badge ${bdg}">${p.status}</span></td><td><code class="small">${p.pv_name}</code></td><td class="small text-muted">${p.alias || ''}</td><td>${catHtml}</td><td class="small">${p.current_value}</td><td class="small">${p.last_checked}</td><td class="small">${alarmHtml}</td>${aaCell}</tr>`;
+    return `<tr class="${rowCls}"><td><span class="badge ${bdg}">${p.status}</span></td><td><code class="small">${p.pv_name}</code></td><td class="small text-muted">${p.alias || ''}</td><td>${catHtml}</td><td class="small">${p.current_value}${p.roc ? ` <small class="d-block ${p.roc_alarm ? 'text-danger' : 'text-muted'}">Δ ${p.roc}</small>` : ''}</td><td class="small">${p.last_checked}</td><td class="small">${alarmHtml}</td>${aaCell}</tr>`;
   }).join('');
 }
 
@@ -571,7 +572,16 @@ async function refresh() {
         badge.className = `badge ${p.enabled ? statusBadge(p.status) : 'bg-secondary'}`;
       }
       const val = document.getElementById(`pv-val-${p.id}`);
-      if (val) val.textContent = p.current_value;
+      if (val) {
+        val.textContent = p.current_value;
+        if (p.roc) {
+          val.appendChild(document.createTextNode(' '));
+          const d = document.createElement('small');
+          d.className = 'd-block ' + (p.roc_alarm ? 'text-danger' : 'text-muted');
+          d.textContent = 'Δ ' + p.roc;
+          val.appendChild(d);
+        }
+      }
       const chk = document.getElementById(`pv-checked-${p.id}`);
       if (chk) chk.textContent = p.last_checked;
       const alm = document.getElementById(`pv-alarm-${p.id}`);

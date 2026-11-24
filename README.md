@@ -614,6 +614,26 @@ mailed once. An email list that is still used by any item cannot be deleted. A s
 (+1 recovered)` with an index of all events followed by each event's details. Each event is still logged
 separately in the Logs tab. Events from different jobs (e.g. a PV and an IOC) in different runs are not merged.
 
+## Rate-of-change alarm (PVs)
+
+A PV can also alarm when its value changes too much within a time window (e.g. helium pressure
+rising or falling by more than 0.5 psi in 10 minutes). Tick **Rate of change** on the PV form and set
+the window (minutes), the threshold, the unit (PV units or percent of the starting value) and the
+direction (rise, drop or either). It works together with the normal alarm condition: the PV is in
+alarm if either triggers, and the alarm mail says which one ("rose by 0.9 within 10 min (from 10 to
+10.9; limit 0.5)"; subject gets "(rate of change)" if only this one fired). The same email lists,
+repeat interval and recovery mail apply, and a newly triggered rate alarm sends a mail even if the
+level alarm was already active.
+
+- The change is *current value minus the value one window ago*. A spike that goes up and comes back
+  down within the window is not seen; use a shorter window for that.
+- The history is kept in memory. After a restart of the service the check needs one full window to
+  collect history before it is active again (the PV table shows "collecting history").
+- After a sudden jump the alarm stays on until the jump is older than the window, because the
+  comparison point still has the old value; then the recovery mail is sent.
+- Disconnected readings are skipped. The current change is shown under the value on the dashboard
+  and in the PV table (red while the rate alarm is active).
+
 ## Compound Rules
 
 A compound rule sends a notification when a *combination* of PV alarm states is true:

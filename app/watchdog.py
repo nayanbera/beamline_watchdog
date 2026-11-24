@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import threading
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -42,7 +43,62 @@ def _local_now_str(cfg):
 # Message builders
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Rate-of-change alarm (history kept in memory; refills after a restart)
+# ---------------------------------------------------------------------------
+
+_roc_samples = {}      # pv id -> list of (unix time, value), oldest first
+
+
+def _roc_eval(pv, value, now_ts):
+    """
+    Compare `value` with the reading one window ago.
+    Returns (state, text, detail): state True = change beyond the threshold, False = within it,
+    None = not enough history yet. `text` is the current change for display.
+    """
+    window = pv.roc_window or 0
+    thr = pv.roc_threshold
+    if not pv.roc_enabled or window <= 0 or thr is None:
+        _roc_samples.pop(pv.id, None)
+        return False, None, None
+    hist = _roc_samples.setdefault(pv.id, [])
+    # Thin the history: about 300 samples per window is plenty.
+    if not hist or now_ts - hist[-1][0] >= max(1.0, window / 300.0):
+        hist.append((now_ts, value))
+    # Keep exactly one reading at or beyond the window start as the reference point.
+    while len(hist) >= 2 and hist[1][0] <= now_ts - window:
+        hist.pop(0)
+    ref_ts, ref = hist[0]
+    unit = ' %' if pv.roc_unit == 'pct' else ''
+    # The reference must be (almost) a full window old; allow one check interval of slack.
+    if now_ts - ref_ts < window * 0.95:
+        return None, f'collecting history ({int(now_ts - ref_ts)} of {int(window)} s)', None
+    change = value - ref
+    if pv.roc_unit == 'pct':
+        if ref == 0:
+            return None, 'reference value is 0 (percent change undefined)', None
+        change = change / abs(ref) * 100.0
+    mins = window / 60.0
+    span = f'{mins:g} min' if window >= 60 else f'{int(window)} s'
+    text = f'{change:+.3g}{unit} / {span}'
+    if pv.roc_direction == 'rise':
+        hit = change > thr
+    elif pv.roc_direction == 'drop':
+        hit = -change > thr
+    else:
+        hit = abs(change) > thr
+    detail = None
+    if hit:
+        verb = 'rose' if change > 0 else 'fell'
+        detail = (f'{verb} by {abs(change):.3g}{unit} within {span} '
+                  f'(from {ref:.6g} to {value:.6g}; limit {thr:g}{unit})')
+    return hit, text, detail
+
+
 def _pv_alarm_body(pv, value, now_str):
+    reason = ''
+    if pv.roc_alarm and pv.roc_detail:
+        reason = f"Rate of change : {pv.roc_detail}\n"
     return (
         f"EPICS PV Watchdog — ALARM\n"
         f"{'='*50}\n"
@@ -50,6 +106,7 @@ def _pv_alarm_body(pv, value, now_str):
         f"Alias     : {pv.alias or 'N/A'}\n"
         f"Description: {pv.description or 'N/A'}\n\n"
         f"Current Value : {value}\n"
+        f"{reason}"
         f"Alarm Condition: {pv.condition_str}\n\n"
         f"Status : ALARM\n"
         f"Time   : {now_str}\n\n"
@@ -311,9 +368,28 @@ def check_all_pvs(app):
                     if not pv.enabled:
                         continue  # value updated; skip alarm/notification for disabled PVs
 
+                    # Rate-of-change alarm (optional); None = not enough history yet, keep last state
+                    roc_prev = bool(pv.roc_alarm)
+                    roc_state, roc_detail = False, None
+                    if pv.roc_enabled:
+                        if pv.current_value is not None:
+                            roc_state, pv.roc_text, roc_detail = _roc_eval(pv, pv.current_value, time.time())
+                        else:
+                            roc_state, pv.roc_text = None, 'value is not numeric'
+                    else:
+                        _roc_eval(pv, 0.0, 0.0)          # drops any stored history
+                        pv.roc_text = None
+                    roc_active = roc_prev if roc_state is None else roc_state
+                    pv.roc_alarm = roc_active
+                    if roc_state:
+                        pv.roc_detail = roc_detail
+                    elif not roc_active:
+                        pv.roc_detail = None
+                    roc_new = roc_active and not roc_prev
+
                     alarm = is_in_alarm(raw, pv.condition_op,
                                         pv.condition_value, pv.condition_value2,
-                                        prev_alarm=(prev == 'ALARM'),
+                                        prev_alarm=(prev == 'ALARM' and not roc_prev),
                                         clear_value=pv.condition_clear_value)
 
                     # Time debounce: a state change must persist for
@@ -336,6 +412,10 @@ def check_all_pvs(app):
                         else:
                             pv.pending_since = None
 
+                    level_alarm = alarm
+                    if roc_active:
+                        alarm = True              # either condition puts the PV in alarm
+
                     # Reconnect notification (was disconnected, now readable)
                     if prev == 'DISCONNECTED' and pv.notify_on_disconnect and pv.email_list_ids:
                         elist = _notify_target(pv)
@@ -349,18 +429,19 @@ def check_all_pvs(app):
                     elif alarm:
                         pv.status = 'ALARM'
                         pv_status_map[pv.id] = 'ALARM'
-                        if prev != 'ALARM':
+                        if prev != 'ALARM' or roc_new:
                             pv.last_alarm = now
 
                         if pv.notify_flag and pv.email_list_ids:
                             ni = pv.notify_interval or default_notify_interval
-                            should = (prev not in ('ALARM',) or pv.last_notified is None or
+                            should = (prev not in ('ALARM',) or pv.last_notified is None or roc_new or
                                       (now - pv.last_notified).total_seconds() >= ni)
                             if should:
                                 elist = _notify_target(pv)
                                 if elist:
                                     body = _pv_alarm_body(pv, raw, now_str)
-                                    digest.add('PV', pv.id, pv.pv_name, 'ALARM', f'[WATCHDOG ALARM] {pv.display_name}', body, elist.get_emails())
+                                    tag = ' (rate of change)' if roc_active and not level_alarm else ''
+                                    digest.add('PV', pv.id, pv.pv_name, 'ALARM', f'[WATCHDOG ALARM] {pv.display_name}{tag}', body, elist.get_emails())
                                     pv.last_notified = now
                     else:
                         pv_status_map[pv.id] = 'OK'

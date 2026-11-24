@@ -197,6 +197,16 @@ class PVMonitor(MultiEmailList, db.Model):
     alarm_delay = db.Column(db.Integer, default=0)
     clear_delay = db.Column(db.Integer, default=0)
     pending_since = db.Column(db.DateTime)  # runtime: when a pending transition began
+    # Optional rate-of-change alarm: |change over roc_window seconds| beyond roc_threshold
+    # (roc_direction rise|drop|either, roc_unit abs|pct). Combined with the level alarm (either triggers).
+    roc_enabled = db.Column(db.Boolean, default=False)
+    roc_window = db.Column(db.Integer)                # seconds
+    roc_threshold = db.Column(db.Float)
+    roc_direction = db.Column(db.String(10), default='either')
+    roc_unit = db.Column(db.String(5), default='abs')
+    roc_alarm = db.Column(db.Boolean, default=False)  # runtime: rate alarm active
+    roc_detail = db.Column(db.String(200))            # runtime: why the rate alarm fired
+    roc_text = db.Column(db.String(100))              # runtime: current change, for display
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     category = db.relationship('Category', backref='pv_monitors')
     notify_flag = db.Column(db.Boolean, default=True)
@@ -240,7 +250,17 @@ class PVMonitor(MultiEmailList, db.Model):
             s += f", after {self.alarm_delay}s"
         if self.clear_delay:
             s += f", clears after {self.clear_delay}s"
+        if self.roc_enabled and self.roc_window and self.roc_threshold is not None:
+            s += f"; or {self.roc_rule_str}"
         return s
+
+    @property
+    def roc_rule_str(self):
+        w = self.roc_window / 60
+        win = f'{w:g} min' if self.roc_window >= 60 else f'{self.roc_window} s'
+        what = {'rise': 'rises', 'drop': 'drops'}.get(self.roc_direction, 'changes')
+        unit = '%' if self.roc_unit == 'pct' else ''
+        return f"{what} by more than {self.roc_threshold:g}{unit} within {win}"
 
 
 class CompoundRule(MultiEmailList, db.Model):

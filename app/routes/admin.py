@@ -35,6 +35,11 @@ def _pv_snapshot(pv):
         'category_id':         pv.category_id,
         'email_list_id':       pv.email_list_id,
         'email_list_ids':      pv.email_list_ids,
+        'roc_enabled':         pv.roc_enabled,
+        'roc_window':          pv.roc_window,
+        'roc_threshold':       pv.roc_threshold,
+        'roc_direction':       pv.roc_direction,
+        'roc_unit':            pv.roc_unit,
         'enabled':             pv.enabled,
         'auto_enable':         pv.auto_enable,
         'notify_flag':         pv.notify_flag,
@@ -262,6 +267,25 @@ def pv_form(pv_id=None):
             pv.notify_interval = 3600
 
         pv.email_list_ids = request.form.getlist('email_list_id')
+
+        # Rate-of-change alarm
+        f = request.form
+        pv.roc_enabled = 'roc_enabled' in f
+        pv.roc_direction = f.get('roc_direction') if f.get('roc_direction') in ('rise', 'drop', 'either') else 'either'
+        pv.roc_unit = 'pct' if f.get('roc_unit') == 'pct' else 'abs'
+        pv.roc_window, pv.roc_threshold = None, None
+        try:
+            if f.get('roc_window', '').strip():
+                pv.roc_window = int(round(float(f['roc_window']) * 60))
+            if f.get('roc_threshold', '').strip():
+                pv.roc_threshold = float(f['roc_threshold'])
+        except ValueError:
+            errors['roc_window'] = 'Window and threshold must be numbers.'
+        if pv.roc_enabled and 'roc_window' not in errors:
+            if not pv.roc_window or pv.roc_window < 10:
+                errors['roc_window'] = 'Window must be at least 10 seconds (0.17 minutes).'
+            if pv.roc_threshold is None or pv.roc_threshold <= 0:
+                errors['roc_threshold'] = 'Threshold must be a number greater than 0.'
 
         if not pv.pv_name:
             errors['pv_name'] = 'PV name is required.'
@@ -1528,6 +1552,11 @@ def pv_history_restore(hist_id):
     pv.pending_since       = None
     pv.category_id         = old.get('category_id')
     pv.email_list_ids      = old.get('email_list_ids', [old.get('email_list_id')])
+    pv.roc_enabled         = old.get('roc_enabled', False)
+    pv.roc_window          = old.get('roc_window')
+    pv.roc_threshold       = old.get('roc_threshold')
+    pv.roc_direction       = old.get('roc_direction', 'either')
+    pv.roc_unit            = old.get('roc_unit', 'abs')
     pv.enabled             = old['enabled']
     pv.auto_enable         = old['auto_enable']
     pv.notify_flag         = old['notify_flag']
